@@ -244,7 +244,7 @@ in pkgs.writeScriptBin name ''
       # Check if we should stop
       for spec in "''${job_specs[@]}"; do
         IFS='|' read -r job_name condition continue_on_error <<< "$spec"
-        if [ "''${JOB_STATUS[$job_name]}" = "failure" ] && [ "$continue_on_error" != "true" ]; then
+        if [ "''${JOB_STATUS[$job_name]:-unknown}" = "failure" ] && [ "$continue_on_error" != "true" ]; then
           echo "⊘ Stopping workflow due to job failure: $job_name"
           return 1
         fi

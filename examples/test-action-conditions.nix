@@ -25,7 +25,9 @@ platform.mkWorkflow {
     
     # Test 2: failure() condition
     test-failure = {
+      needs = ["test-success"];
       executor = platform.executors.local;
+      continue-on-error = true;  # This job is expected to fail
       actions = [
         {
           name = "action1-fails";
@@ -46,7 +48,9 @@ platform.mkWorkflow {
     
     # Test 3: always() condition
     test-always = {
+      needs = ["test-failure"];
       executor = platform.executors.local;
+      continue-on-error = true;  # This job is expected to fail
       actions = [
         {
           name = "action1-fails";
@@ -62,6 +66,7 @@ platform.mkWorkflow {
     
     # Test 4: bash script conditions
     test-bash-conditions = {
+      needs = ["test-always"];
       executor = platform.executors.local;
       env = {
         ENVIRONMENT = "production";
@@ -92,7 +97,9 @@ platform.mkWorkflow {
     
     # Test 5: complex scenario
     test-complex = {
+      needs = ["test-bash-conditions"];
       executor = platform.executors.local;
+      continue-on-error = true;  # This job is expected to fail
       actions = [
         {
           name = "build";
