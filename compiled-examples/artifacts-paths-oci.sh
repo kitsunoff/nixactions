@@ -189,7 +189,7 @@ set -a
 set +a
 
 # Execute action as separate process
-/nix/store/hdwpjkhis0y7cv1zfcrlzn7f64fza148-build/bin/build
+/nix/store/r1s7mr7ypkxnkgs5lmmsky3hfs8kg6r9-build/bin/build
 
 '
 
@@ -377,7 +377,7 @@ set -a
 set +a
 
 # Execute action as separate process
-/nix/store/6sch2vjgq7k8s8qpwi1r8k6klld149qh-test/bin/test
+/nix/store/dnp66xl0fk1fj26z41glgf31kk44vr48-test/bin/test
 
 '
 

@@ -167,7 +167,7 @@ set -a
 set +a
 
 # Execute action as separate process
-/nix/store/4yzgh70ix5x9cvrq7fbnchrsvnq1mrdi-build/bin/build
+/nix/store/6aj0lvfzqyp05m5ii498nf8nhivdng7v-build/bin/build
 
 
   
@@ -288,7 +288,7 @@ set -a
 set +a
 
 # Execute action as separate process
-/nix/store/aixblmm5899jy62w6qdmlpq235cfa3ck-test/bin/test
+/nix/store/dfsi7aq678iahd9kkdn3lqhn66l3fpa6-test/bin/test
 
 
   

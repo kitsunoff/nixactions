@@ -131,7 +131,7 @@ job_build() {
 if [ -z "${CONTAINER_ID_OCI_alpine_build:-}" ]; then
   # Load custom image
   echo "→ Loading custom OCI image with actions (this may take a while)..."
-  /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker load < /nix/store/a82qiynyflk94z2nm58qffv8xjghscr1-nixactions-alpine.tar.gz
+  /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker load < /nix/store/219spg29r8nrmwr20fzxzwkv4hs3kffz-nixactions-alpine.tar.gz
   
   # Create and start container from custom image
   CONTAINER_ID_OCI_alpine_build=$(/nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker create \
@@ -192,7 +192,7 @@ set -a
 set +a
 
 # Execute action as separate process
-/nix/store/6lwqiiy35i3d1cjzjbzaicd8cbvkah30-build/bin/build
+/nix/store/58njqjz0y31qd1p1scwacf2pqafmw5pr-build/bin/build
 
 '
 
@@ -271,7 +271,7 @@ job_test() {
 if [ -z "${CONTAINER_ID_OCI_alpine_build:-}" ]; then
   # Load custom image
   echo "→ Loading custom OCI image with actions (this may take a while)..."
-  /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker load < /nix/store/g0izknvq91xknynsbjyhd7rb0yi4vjha-nixactions-alpine.tar.gz
+  /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker load < /nix/store/sawxcpcgki7cjpc7yljhp1irfszn9f3f-nixactions-alpine.tar.gz
   
   # Create and start container from custom image
   CONTAINER_ID_OCI_alpine_build=$(/nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker create \
@@ -383,7 +383,7 @@ set -a
 set +a
 
 # Execute action as separate process
-/nix/store/39md2kwksmp3dgqfpsly9aszjwrxw28b-test/bin/test
+/nix/store/pqp391wcii15bbcpinkpp62qrib2p0ck-test/bin/test
 
 '
 
