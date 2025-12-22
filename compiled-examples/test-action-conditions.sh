@@ -113,7 +113,7 @@ run_parallel() {
     # Check if we should stop
     for spec in "${job_specs[@]}"; do
       IFS='|' read -r job_name condition continue_on_error <<< "$spec"
-      if [ "${JOB_STATUS[$job_name]}" = "failure" ] && [ "$continue_on_error" != "true" ]; then
+      if [ "${JOB_STATUS[$job_name]:-unknown}" = "failure" ] && [ "$continue_on_error" != "true" ]; then
         echo "⊘ Stopping workflow due to job failure: $job_name"
         return 1
       fi
@@ -1271,21 +1271,65 @@ main() {
   echo "════════════════════════════════════════"
   echo " Workflow: test-action-conditions"
   echo " Execution: GitHub Actions style (parallel)"
-  echo " Levels: 1"
+  echo " Levels: 5"
   echo "════════════════════════════════════════"
   echo ""
   
   # Execute level by level
-  echo "→ Level 0: test-always, test-bash-conditions, test-complex, test-failure, test-success"
+  echo "→ Level 0: test-success"
 
 # Build job specs (name|condition|continueOnError)
 run_parallel \
-   "test-always|success()|" \
-    "test-bash-conditions|success()|" \
-    "test-complex|success()|" \
-    "test-failure|success()|" \
-    "test-success|success()|" || {
+   "test-success|success()|" || {
     echo "⊘ Level 0 failed"
+    exit 1
+  }
+
+echo ""
+
+
+echo "→ Level 1: test-failure"
+
+# Build job specs (name|condition|continueOnError)
+run_parallel \
+   "test-failure|success()|" || {
+    echo "⊘ Level 1 failed"
+    exit 1
+  }
+
+echo ""
+
+
+echo "→ Level 2: test-always"
+
+# Build job specs (name|condition|continueOnError)
+run_parallel \
+   "test-always|success()|" || {
+    echo "⊘ Level 2 failed"
+    exit 1
+  }
+
+echo ""
+
+
+echo "→ Level 3: test-bash-conditions"
+
+# Build job specs (name|condition|continueOnError)
+run_parallel \
+   "test-bash-conditions|success()|" || {
+    echo "⊘ Level 3 failed"
+    exit 1
+  }
+
+echo ""
+
+
+echo "→ Level 4: test-complex"
+
+# Build job specs (name|condition|continueOnError)
+run_parallel \
+   "test-complex|success()|" || {
+    echo "⊘ Level 4 failed"
     exit 1
   }
 
