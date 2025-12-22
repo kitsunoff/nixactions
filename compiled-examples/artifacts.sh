@@ -4,7 +4,7 @@ set -euo pipefail
 # NixActions workflow - executors own workspace (v2)
 
 # Generate workflow ID
-WORKFLOW_ID="artifacts-paths-$(date +%s)-$$"
+WORKFLOW_ID="artifacts-simple-$(date +%s)-$$"
 export WORKFLOW_ID
 
 # Setup artifacts directory on control node
@@ -169,7 +169,7 @@ echo "→ build"
   set +a
   
   # Execute action
-  exec /nix/store/gygzgja0mnimxq0zsy0m2z9a4c8yfxvp-build/bin/build
+  exec /nix/store/4yzgh70ix5x9cvrq7fbnchrsvnq1mrdi-build/bin/build
 )
 
 
@@ -178,44 +178,44 @@ echo "→ build"
 echo ""
 echo "→ Saving artifacts"
 JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/build"
-if [ -e "$JOB_DIR/build/dist/" ]; then
-  rm -rf "$NIXACTIONS_ARTIFACTS_DIR/build-artifacts"
-  mkdir -p "$NIXACTIONS_ARTIFACTS_DIR/build-artifacts"
+if [ -e "$JOB_DIR/dist/" ]; then
+  rm -rf "$NIXACTIONS_ARTIFACTS_DIR/dist"
+  mkdir -p "$NIXACTIONS_ARTIFACTS_DIR/dist"
   
   # Save preserving original path structure
-  PARENT_DIR=$(dirname "build/dist/")
+  PARENT_DIR=$(dirname "dist/")
   if [ "$PARENT_DIR" != "." ]; then
-    mkdir -p "$NIXACTIONS_ARTIFACTS_DIR/build-artifacts/$PARENT_DIR"
+    mkdir -p "$NIXACTIONS_ARTIFACTS_DIR/dist/$PARENT_DIR"
   fi
   
-  cp -r "$JOB_DIR/build/dist/" "$NIXACTIONS_ARTIFACTS_DIR/build-artifacts/build/dist/"
+  cp -r "$JOB_DIR/dist/" "$NIXACTIONS_ARTIFACTS_DIR/dist/dist/"
 else
-  echo "  ✗ Path not found: build/dist/"
+  echo "  ✗ Path not found: dist/"
   return 1
 fi
 
-ARTIFACT_SIZE=$(du -sh "$NIXACTIONS_ARTIFACTS_DIR/build-artifacts" 2>/dev/null | cut -f1 || echo "unknown")
-echo "  ✓ Saved: build-artifacts → build/dist/ (${ARTIFACT_SIZE})"
+ARTIFACT_SIZE=$(du -sh "$NIXACTIONS_ARTIFACTS_DIR/dist" 2>/dev/null | cut -f1 || echo "unknown")
+echo "  ✓ Saved: dist → dist/ (${ARTIFACT_SIZE})"
 
 JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/build"
-if [ -e "$JOB_DIR/target/release/myapp" ]; then
-  rm -rf "$NIXACTIONS_ARTIFACTS_DIR/release-binary"
-  mkdir -p "$NIXACTIONS_ARTIFACTS_DIR/release-binary"
+if [ -e "$JOB_DIR/myapp" ]; then
+  rm -rf "$NIXACTIONS_ARTIFACTS_DIR/myapp"
+  mkdir -p "$NIXACTIONS_ARTIFACTS_DIR/myapp"
   
   # Save preserving original path structure
-  PARENT_DIR=$(dirname "target/release/myapp")
+  PARENT_DIR=$(dirname "myapp")
   if [ "$PARENT_DIR" != "." ]; then
-    mkdir -p "$NIXACTIONS_ARTIFACTS_DIR/release-binary/$PARENT_DIR"
+    mkdir -p "$NIXACTIONS_ARTIFACTS_DIR/myapp/$PARENT_DIR"
   fi
   
-  cp -r "$JOB_DIR/target/release/myapp" "$NIXACTIONS_ARTIFACTS_DIR/release-binary/target/release/myapp"
+  cp -r "$JOB_DIR/myapp" "$NIXACTIONS_ARTIFACTS_DIR/myapp/myapp"
 else
-  echo "  ✗ Path not found: target/release/myapp"
+  echo "  ✗ Path not found: myapp"
   return 1
 fi
 
-ARTIFACT_SIZE=$(du -sh "$NIXACTIONS_ARTIFACTS_DIR/release-binary" 2>/dev/null | cut -f1 || echo "unknown")
-echo "  ✓ Saved: release-binary → target/release/myapp (${ARTIFACT_SIZE})"
+ARTIFACT_SIZE=$(du -sh "$NIXACTIONS_ARTIFACTS_DIR/myapp" 2>/dev/null | cut -f1 || echo "unknown")
+echo "  ✓ Saved: myapp → myapp (${ARTIFACT_SIZE})"
 
 
 }
@@ -233,30 +233,30 @@ fi
 
   
   # Restore artifacts on HOST before executing job
-echo "→ Restoring artifacts: release-binary build-artifacts"
+echo "→ Restoring artifacts: dist myapp"
 JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/test"
-if [ -e "$NIXACTIONS_ARTIFACTS_DIR/release-binary" ]; then
+if [ -e "$NIXACTIONS_ARTIFACTS_DIR/dist" ]; then
   # Restore to job directory (will be created by executeJob)
   mkdir -p "$JOB_DIR"
-  cp -r "$NIXACTIONS_ARTIFACTS_DIR/release-binary"/* "$JOB_DIR/" 2>/dev/null || true
+  cp -r "$NIXACTIONS_ARTIFACTS_DIR/dist"/* "$JOB_DIR/" 2>/dev/null || true
 else
-  echo "  ✗ Artifact not found: release-binary"
+  echo "  ✗ Artifact not found: dist"
   return 1
 fi
 
-echo "  ✓ Restored: release-binary"
+echo "  ✓ Restored: dist"
 
 JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/test"
-if [ -e "$NIXACTIONS_ARTIFACTS_DIR/build-artifacts" ]; then
+if [ -e "$NIXACTIONS_ARTIFACTS_DIR/myapp" ]; then
   # Restore to job directory (will be created by executeJob)
   mkdir -p "$JOB_DIR"
-  cp -r "$NIXACTIONS_ARTIFACTS_DIR/build-artifacts"/* "$JOB_DIR/" 2>/dev/null || true
+  cp -r "$NIXACTIONS_ARTIFACTS_DIR/myapp"/* "$JOB_DIR/" 2>/dev/null || true
 else
-  echo "  ✗ Artifact not found: build-artifacts"
+  echo "  ✗ Artifact not found: myapp"
   return 1
 fi
 
-echo "  ✓ Restored: build-artifacts"
+echo "  ✓ Restored: myapp"
 
 echo ""
 
@@ -293,7 +293,7 @@ echo "→ test"
   set +a
   
   # Execute action
-  exec /nix/store/p4qnqkh91f8pfpj1hhvnyznsfnjxy9jg-test/bin/test
+  exec /nix/store/aixblmm5899jy62w6qdmlpq235cfa3ck-test/bin/test
 )
 
 
@@ -305,7 +305,7 @@ echo "→ test"
 # Main execution
 main() {
   echo "════════════════════════════════════════"
-  echo " Workflow: artifacts-paths"
+  echo " Workflow: artifacts-simple"
   echo " Execution: GitHub Actions style (parallel)"
   echo " Levels: 2"
   echo "════════════════════════════════════════"

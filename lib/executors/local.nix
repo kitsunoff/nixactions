@@ -5,7 +5,7 @@ mkExecutor {
   
   # Setup local workspace in /tmp
   # Expects $WORKFLOW_ID to be set
-  setupWorkspace = ''
+  setupWorkspace = { actionDerivations }: ''
     # Lazy init - only create if not exists
     if [ -z "''${WORKSPACE_DIR_LOCAL:-}" ]; then
       WORKSPACE_DIR_LOCAL="/tmp/nixactions/$WORKFLOW_ID"
@@ -30,11 +30,16 @@ mkExecutor {
   '';
   
   # Execute job locally in isolated directory
-  executeJob = { jobName, script }: ''
+  executeJob = { jobName, actionDerivations, env }: ''
     # Create isolated directory for this job
     JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/${jobName}"
     mkdir -p "$JOB_DIR"
     cd "$JOB_DIR"
+    
+    # Create job-specific env file INSIDE workspace
+    JOB_ENV="$JOB_DIR/.job-env"
+    touch "$JOB_ENV"
+    export JOB_ENV
     
     echo "╔════════════════════════════════════════╗"
     echo "║ JOB: ${jobName}"
@@ -42,8 +47,33 @@ mkExecutor {
     echo "║ WORKDIR: $JOB_DIR"
     echo "╚════════════════════════════════════════╝"
     
-    # Execute the job script
-    ${script}
+    # Set job-level environment
+    ${lib.concatStringsSep "\n" (
+      lib.mapAttrsToList (k: v: 
+        "export ${k}=${lib.escapeShellArg (toString v)}"
+      ) env
+    )}
+    
+    # Execute action derivations as separate processes
+    ${lib.concatMapStringsSep "\n\n" (action: 
+      let
+        actionName = action.passthru.name or (builtins.baseNameOf action);
+      in ''
+        # === ${actionName} ===
+        echo "→ ${actionName}"
+        
+        # Execute action with JOB_ENV sourced (in subshell to maintain isolation)
+        (
+          # Auto-export all variables from JOB_ENV
+          set -a
+          [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
+          set +a
+          
+          # Execute action
+          exec ${action}/bin/${actionName}
+        )
+      ''
+    ) actionDerivations}
   '';
   
   provision = null;

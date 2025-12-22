@@ -40,6 +40,9 @@
           # Example: Test environment propagation
           example-test-env = import ./examples/test-env.nix { inherit pkgs platform; };
           
+          # Example: Environment variable sharing between actions
+          example-env-sharing = import ./examples/env-sharing.nix { inherit pkgs platform; };
+          
           # Example: Test job isolation
           example-test-isolation = import ./examples/test-isolation.nix { inherit pkgs platform; };
           
@@ -61,8 +64,11 @@
           # Example: Artifacts with nested paths
           example-artifacts-paths = import ./examples/artifacts-paths.nix { inherit pkgs platform; };
           
-          # Example: Artifacts with OCI executor
+          # Example: Artifacts with OCI executor (mount mode)
           example-artifacts-oci = import ./examples/artifacts-simple-oci.nix { inherit pkgs platform; };
+          
+          # Example: Artifacts with OCI executor (build mode)
+          example-artifacts-oci-build = import ./examples/artifacts-oci-build.nix { inherit pkgs platform; };
           
           # Example: Artifacts with nested paths in OCI
           example-artifacts-paths-oci = import ./examples/artifacts-paths-oci.nix { inherit pkgs platform; };
@@ -90,6 +96,7 @@
             echo "     nix run .#example-complete"
             echo "     nix run .#example-secrets"
             echo "     nix run .#example-test-env"
+            echo "     nix run .#example-env-sharing"
             echo "     nix run .#example-test-isolation"
             echo "     nix run .#example-python-ci"
             echo "     nix run .#example-nix-shell"

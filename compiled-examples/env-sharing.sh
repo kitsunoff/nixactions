@@ -4,7 +4,7 @@ set -euo pipefail
 # NixActions workflow - executors own workspace (v2)
 
 # Generate workflow ID
-WORKFLOW_ID="artifacts-paths-$(date +%s)-$$"
+WORKFLOW_ID="env-sharing-demo-$(date +%s)-$$"
 export WORKFLOW_ID
 
 # Setup artifacts directory on control node
@@ -158,8 +158,8 @@ echo "╚═══════════════════════�
 
 
 # Execute action derivations as separate processes
-# === build ===
-echo "→ build"
+# === generate-version ===
+echo "→ generate-version"
 
 # Execute action with JOB_ENV sourced (in subshell to maintain isolation)
 (
@@ -169,7 +169,37 @@ echo "→ build"
   set +a
   
   # Execute action
-  exec /nix/store/gygzgja0mnimxq0zsy0m2z9a4c8yfxvp-build/bin/build
+  exec /nix/store/yppl7mvsdmnjj3bg9bknb1b0mcaazhw3-generate-version/bin/generate-version
+)
+
+
+# === build-app ===
+echo "→ build-app"
+
+# Execute action with JOB_ENV sourced (in subshell to maintain isolation)
+(
+  # Auto-export all variables from JOB_ENV
+  set -a
+  [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
+  set +a
+  
+  # Execute action
+  exec /nix/store/b6y5fscrm1k8d6fnnsflkqz0y5w7qmnj-build-app/bin/build-app
+)
+
+
+# === verify-build ===
+echo "→ verify-build"
+
+# Execute action with JOB_ENV sourced (in subshell to maintain isolation)
+(
+  # Auto-export all variables from JOB_ENV
+  set -a
+  [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
+  set +a
+  
+  # Execute action
+  exec /nix/store/0zcsa9f71nl16bzyf4zn3g6n1xkfgvbb-verify-build/bin/verify-build
 )
 
 
@@ -178,50 +208,30 @@ echo "→ build"
 echo ""
 echo "→ Saving artifacts"
 JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/build"
-if [ -e "$JOB_DIR/build/dist/" ]; then
-  rm -rf "$NIXACTIONS_ARTIFACTS_DIR/build-artifacts"
-  mkdir -p "$NIXACTIONS_ARTIFACTS_DIR/build-artifacts"
+if [ -e "$JOB_DIR/dist/" ]; then
+  rm -rf "$NIXACTIONS_ARTIFACTS_DIR/build-info"
+  mkdir -p "$NIXACTIONS_ARTIFACTS_DIR/build-info"
   
   # Save preserving original path structure
-  PARENT_DIR=$(dirname "build/dist/")
+  PARENT_DIR=$(dirname "dist/")
   if [ "$PARENT_DIR" != "." ]; then
-    mkdir -p "$NIXACTIONS_ARTIFACTS_DIR/build-artifacts/$PARENT_DIR"
+    mkdir -p "$NIXACTIONS_ARTIFACTS_DIR/build-info/$PARENT_DIR"
   fi
   
-  cp -r "$JOB_DIR/build/dist/" "$NIXACTIONS_ARTIFACTS_DIR/build-artifacts/build/dist/"
+  cp -r "$JOB_DIR/dist/" "$NIXACTIONS_ARTIFACTS_DIR/build-info/dist/"
 else
-  echo "  ✗ Path not found: build/dist/"
+  echo "  ✗ Path not found: dist/"
   return 1
 fi
 
-ARTIFACT_SIZE=$(du -sh "$NIXACTIONS_ARTIFACTS_DIR/build-artifacts" 2>/dev/null | cut -f1 || echo "unknown")
-echo "  ✓ Saved: build-artifacts → build/dist/ (${ARTIFACT_SIZE})"
-
-JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/build"
-if [ -e "$JOB_DIR/target/release/myapp" ]; then
-  rm -rf "$NIXACTIONS_ARTIFACTS_DIR/release-binary"
-  mkdir -p "$NIXACTIONS_ARTIFACTS_DIR/release-binary"
-  
-  # Save preserving original path structure
-  PARENT_DIR=$(dirname "target/release/myapp")
-  if [ "$PARENT_DIR" != "." ]; then
-    mkdir -p "$NIXACTIONS_ARTIFACTS_DIR/release-binary/$PARENT_DIR"
-  fi
-  
-  cp -r "$JOB_DIR/target/release/myapp" "$NIXACTIONS_ARTIFACTS_DIR/release-binary/target/release/myapp"
-else
-  echo "  ✗ Path not found: target/release/myapp"
-  return 1
-fi
-
-ARTIFACT_SIZE=$(du -sh "$NIXACTIONS_ARTIFACTS_DIR/release-binary" 2>/dev/null | cut -f1 || echo "unknown")
-echo "  ✓ Saved: release-binary → target/release/myapp (${ARTIFACT_SIZE})"
+ARTIFACT_SIZE=$(du -sh "$NIXACTIONS_ARTIFACTS_DIR/build-info" 2>/dev/null | cut -f1 || echo "unknown")
+echo "  ✓ Saved: build-info → dist/ (${ARTIFACT_SIZE})"
 
 
 }
 
 
-job_test() {
+job_calculate() {
   # Setup workspace for this job
   # Lazy init - only create if not exists
 if [ -z "${WORKSPACE_DIR_LOCAL:-}" ]; then
@@ -233,37 +243,25 @@ fi
 
   
   # Restore artifacts on HOST before executing job
-echo "→ Restoring artifacts: release-binary build-artifacts"
-JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/test"
-if [ -e "$NIXACTIONS_ARTIFACTS_DIR/release-binary" ]; then
+echo "→ Restoring artifacts: build-info"
+JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/calculate"
+if [ -e "$NIXACTIONS_ARTIFACTS_DIR/build-info" ]; then
   # Restore to job directory (will be created by executeJob)
   mkdir -p "$JOB_DIR"
-  cp -r "$NIXACTIONS_ARTIFACTS_DIR/release-binary"/* "$JOB_DIR/" 2>/dev/null || true
+  cp -r "$NIXACTIONS_ARTIFACTS_DIR/build-info"/* "$JOB_DIR/" 2>/dev/null || true
 else
-  echo "  ✗ Artifact not found: release-binary"
+  echo "  ✗ Artifact not found: build-info"
   return 1
 fi
 
-echo "  ✓ Restored: release-binary"
-
-JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/test"
-if [ -e "$NIXACTIONS_ARTIFACTS_DIR/build-artifacts" ]; then
-  # Restore to job directory (will be created by executeJob)
-  mkdir -p "$JOB_DIR"
-  cp -r "$NIXACTIONS_ARTIFACTS_DIR/build-artifacts"/* "$JOB_DIR/" 2>/dev/null || true
-else
-  echo "  ✗ Artifact not found: build-artifacts"
-  return 1
-fi
-
-echo "  ✓ Restored: build-artifacts"
+echo "  ✓ Restored: build-info"
 
 echo ""
 
   
   # Execute job via executor
   # Create isolated directory for this job
-JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/test"
+JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/calculate"
 mkdir -p "$JOB_DIR"
 cd "$JOB_DIR"
 
@@ -273,7 +271,7 @@ touch "$JOB_ENV"
 export JOB_ENV
 
 echo "╔════════════════════════════════════════╗"
-echo "║ JOB: test"
+echo "║ JOB: calculate"
 echo "║ EXECUTOR: local"
 echo "║ WORKDIR: $JOB_DIR"
 echo "╚════════════════════════════════════════╝"
@@ -282,8 +280,8 @@ echo "╚═══════════════════════�
 
 
 # Execute action derivations as separate processes
-# === test ===
-echo "→ test"
+# === multi-step-calculation ===
+echo "→ multi-step-calculation"
 
 # Execute action with JOB_ENV sourced (in subshell to maintain isolation)
 (
@@ -293,7 +291,160 @@ echo "→ test"
   set +a
   
   # Execute action
-  exec /nix/store/p4qnqkh91f8pfpj1hhvnyznsfnjxy9jg-test/bin/test
+  exec /nix/store/d11clxjfbfsz507z5gkky22qwv0360ib-multi-step-calculation/bin/multi-step-calculation
+)
+
+
+# === use-calculations ===
+echo "→ use-calculations"
+
+# Execute action with JOB_ENV sourced (in subshell to maintain isolation)
+(
+  # Auto-export all variables from JOB_ENV
+  set -a
+  [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
+  set +a
+  
+  # Execute action
+  exec /nix/store/jr8aw0jqs7yggbqrpvsj09zpjq5jgp3y-use-calculations/bin/use-calculations
+)
+
+
+  
+  
+}
+
+
+job_summary() {
+  # Setup workspace for this job
+  # Lazy init - only create if not exists
+if [ -z "${WORKSPACE_DIR_LOCAL:-}" ]; then
+  WORKSPACE_DIR_LOCAL="/tmp/nixactions/$WORKFLOW_ID"
+  mkdir -p "$WORKSPACE_DIR_LOCAL"
+  export WORKSPACE_DIR_LOCAL
+  echo "→ Local workspace: $WORKSPACE_DIR_LOCAL"
+fi
+
+  
+  
+  
+  # Execute job via executor
+  # Create isolated directory for this job
+JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/summary"
+mkdir -p "$JOB_DIR"
+cd "$JOB_DIR"
+
+# Create job-specific env file INSIDE workspace
+JOB_ENV="$JOB_DIR/.job-env"
+touch "$JOB_ENV"
+export JOB_ENV
+
+echo "╔════════════════════════════════════════╗"
+echo "║ JOB: summary"
+echo "║ EXECUTOR: local"
+echo "║ WORKDIR: $JOB_DIR"
+echo "╚════════════════════════════════════════╝"
+
+# Set job-level environment
+
+
+# Execute action derivations as separate processes
+# === summary ===
+echo "→ summary"
+
+# Execute action with JOB_ENV sourced (in subshell to maintain isolation)
+(
+  # Auto-export all variables from JOB_ENV
+  set -a
+  [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
+  set +a
+  
+  # Execute action
+  exec /nix/store/ynd06pfq2vvlikrnkqn7jwn1a8pml19b-summary/bin/summary
+)
+
+
+  
+  
+}
+
+
+job_test-advanced() {
+  # Setup workspace for this job
+  # Lazy init - only create if not exists
+if [ -z "${WORKSPACE_DIR_LOCAL:-}" ]; then
+  WORKSPACE_DIR_LOCAL="/tmp/nixactions/$WORKFLOW_ID"
+  mkdir -p "$WORKSPACE_DIR_LOCAL"
+  export WORKSPACE_DIR_LOCAL
+  echo "→ Local workspace: $WORKSPACE_DIR_LOCAL"
+fi
+
+  
+  # Restore artifacts on HOST before executing job
+echo "→ Restoring artifacts: build-info"
+JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/test-advanced"
+if [ -e "$NIXACTIONS_ARTIFACTS_DIR/build-info" ]; then
+  # Restore to job directory (will be created by executeJob)
+  mkdir -p "$JOB_DIR"
+  cp -r "$NIXACTIONS_ARTIFACTS_DIR/build-info"/* "$JOB_DIR/" 2>/dev/null || true
+else
+  echo "  ✗ Artifact not found: build-info"
+  return 1
+fi
+
+echo "  ✓ Restored: build-info"
+
+echo ""
+
+  
+  # Execute job via executor
+  # Create isolated directory for this job
+JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/test-advanced"
+mkdir -p "$JOB_DIR"
+cd "$JOB_DIR"
+
+# Create job-specific env file INSIDE workspace
+JOB_ENV="$JOB_DIR/.job-env"
+touch "$JOB_ENV"
+export JOB_ENV
+
+echo "╔════════════════════════════════════════╗"
+echo "║ JOB: test-advanced"
+echo "║ EXECUTOR: local"
+echo "║ WORKDIR: $JOB_DIR"
+echo "╚════════════════════════════════════════╝"
+
+# Set job-level environment
+
+
+# Execute action derivations as separate processes
+# === parse-build-info ===
+echo "→ parse-build-info"
+
+# Execute action with JOB_ENV sourced (in subshell to maintain isolation)
+(
+  # Auto-export all variables from JOB_ENV
+  set -a
+  [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
+  set +a
+  
+  # Execute action
+  exec /nix/store/lqq2w1h867wgricy5ihnl0r77j2qhkfd-parse-build-info/bin/parse-build-info
+)
+
+
+# === use-parsed-version ===
+echo "→ use-parsed-version"
+
+# Execute action with JOB_ENV sourced (in subshell to maintain isolation)
+(
+  # Auto-export all variables from JOB_ENV
+  set -a
+  [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
+  set +a
+  
+  # Execute action
+  exec /nix/store/a2zb18grkl07nviiczybys0x21xjwhck-use-parsed-version/bin/use-parsed-version
 )
 
 
@@ -305,9 +456,9 @@ echo "→ test"
 # Main execution
 main() {
   echo "════════════════════════════════════════"
-  echo " Workflow: artifacts-paths"
+  echo " Workflow: env-sharing-demo"
   echo " Execution: GitHub Actions style (parallel)"
-  echo " Levels: 2"
+  echo " Levels: 3"
   echo "════════════════════════════════════════"
   echo ""
   
@@ -324,12 +475,25 @@ run_parallel \
 echo ""
 
 
-echo "→ Level 1: test"
+echo "→ Level 1: calculate, test-advanced"
 
 # Build job specs (name|condition|continueOnError)
 run_parallel \
-   "test|success()|" || {
+   "calculate|success()|" \
+    "test-advanced|success()|" || {
     echo "⊘ Level 1 failed"
+    exit 1
+  }
+
+echo ""
+
+
+echo "→ Level 2: summary"
+
+# Build job specs (name|condition|continueOnError)
+run_parallel \
+   "summary|success()|" || {
+    echo "⊘ Level 2 failed"
     exit 1
   }
 
@@ -345,7 +509,7 @@ echo ""
     printf '  - %s\n' "${FAILED_JOBS[@]}"
     echo ""
     echo "Job statuses:"
-    for job in build test; do
+    for job in build calculate summary test-advanced; do
       echo "  $job: ${JOB_STATUS[$job]:-unknown}"
     done
     exit 1
@@ -353,7 +517,7 @@ echo ""
     echo "✓ Workflow completed successfully"
     echo ""
     echo "All jobs succeeded:"
-    for job in build test; do
+    for job in build calculate summary test-advanced; do
       if [ "${JOB_STATUS[$job]:-unknown}" = "success" ]; then
         echo "  ✓ $job"
       elif [ "${JOB_STATUS[$job]:-unknown}" = "skipped" ]; then

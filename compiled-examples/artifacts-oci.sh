@@ -4,7 +4,7 @@ set -euo pipefail
 # NixActions workflow - executors own workspace (v2)
 
 # Generate workflow ID
-WORKFLOW_ID="artifacts-paths-$(date +%s)-$$"
+WORKFLOW_ID="artifacts-simple-oci-$(date +%s)-$$"
 export WORKFLOW_ID
 
 # Setup artifacts directory on control node
@@ -126,31 +126,53 @@ run_parallel() {
 # Job functions
 job_build() {
   # Setup workspace for this job
-  # Lazy init - only create if not exists
-if [ -z "${WORKSPACE_DIR_LOCAL:-}" ]; then
-  WORKSPACE_DIR_LOCAL="/tmp/nixactions/$WORKFLOW_ID"
-  mkdir -p "$WORKSPACE_DIR_LOCAL"
-  export WORKSPACE_DIR_LOCAL
-  echo "→ Local workspace: $WORKSPACE_DIR_LOCAL"
+  # Mode: MOUNT - mount /nix/store from host
+# Lazy init - only create if not exists
+if [ -z "${CONTAINER_ID_OCI_nixos_nix_mount:-}" ]; then
+  # Create and start long-running container with /nix/store mounted
+  CONTAINER_ID_OCI_nixos_nix_mount=$(/nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker create \
+    -v /nix/store:/nix/store:ro \
+    nixos/nix \
+    sleep infinity)
+  
+  /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker start "$CONTAINER_ID_OCI_nixos_nix_mount"
+  
+  export CONTAINER_ID_OCI_nixos_nix_mount
+  
+  # Create workspace directory in container
+  /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker exec "$CONTAINER_ID_OCI_nixos_nix_mount" mkdir -p /workspace
+  
+  echo "→ OCI workspace (mount): container $CONTAINER_ID_OCI_nixos_nix_mount:/workspace"
 fi
 
   
   
   
   # Execute job via executor
-  # Create isolated directory for this job
-JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/build"
+  # Ensure workspace is initialized
+if [ -z "${CONTAINER_ID_OCI_nixos_nix_mount:-}" ]; then
+  echo "Error: OCI workspace not initialized for nixos/nix (mode: mount)"
+  exit 1
+fi
+
+/nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker exec \
+   \
+  "$CONTAINER_ID_OCI_nixos_nix_mount" \
+  bash -c 'set -euo pipefail
+
+# Create job directory
+JOB_DIR="/workspace/jobs/build"
 mkdir -p "$JOB_DIR"
 cd "$JOB_DIR"
 
-# Create job-specific env file INSIDE workspace
+# Create job-specific env file INSIDE container workspace
 JOB_ENV="$JOB_DIR/.job-env"
 touch "$JOB_ENV"
 export JOB_ENV
 
 echo "╔════════════════════════════════════════╗"
 echo "║ JOB: build"
-echo "║ EXECUTOR: local"
+echo "║ EXECUTOR: oci-nixos_nix-mount"
 echo "║ WORKDIR: $JOB_DIR"
 echo "╚════════════════════════════════════════╝"
 
@@ -169,53 +191,74 @@ echo "→ build"
   set +a
   
   # Execute action
-  exec /nix/store/gygzgja0mnimxq0zsy0m2z9a4c8yfxvp-build/bin/build
+  exec /nix/store/7i5kwq9ji4mzcfyjn6w23bisxy7119d2-build/bin/build
 )
 
+'
 
   
   # Save artifacts on HOST after job completes
 echo ""
 echo "→ Saving artifacts"
-JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/build"
-if [ -e "$JOB_DIR/build/dist/" ]; then
-  rm -rf "$NIXACTIONS_ARTIFACTS_DIR/build-artifacts"
-  mkdir -p "$NIXACTIONS_ARTIFACTS_DIR/build-artifacts"
-  
-  # Save preserving original path structure
-  PARENT_DIR=$(dirname "build/dist/")
-  if [ "$PARENT_DIR" != "." ]; then
-    mkdir -p "$NIXACTIONS_ARTIFACTS_DIR/build-artifacts/$PARENT_DIR"
-  fi
-  
-  cp -r "$JOB_DIR/build/dist/" "$NIXACTIONS_ARTIFACTS_DIR/build-artifacts/build/dist/"
-else
-  echo "  ✗ Path not found: build/dist/"
+if [ -z "${CONTAINER_ID_OCI_nixos_nix_mount:-}" ]; then
+  echo "  ✗ Container not initialized"
   return 1
 fi
 
-ARTIFACT_SIZE=$(du -sh "$NIXACTIONS_ARTIFACTS_DIR/build-artifacts" 2>/dev/null | cut -f1 || echo "unknown")
-echo "  ✓ Saved: build-artifacts → build/dist/ (${ARTIFACT_SIZE})"
+JOB_DIR="/workspace/jobs/build"
 
-JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/build"
-if [ -e "$JOB_DIR/target/release/myapp" ]; then
-  rm -rf "$NIXACTIONS_ARTIFACTS_DIR/release-binary"
-  mkdir -p "$NIXACTIONS_ARTIFACTS_DIR/release-binary"
+# Check if path exists in container
+if /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker exec "$CONTAINER_ID_OCI_nixos_nix_mount" test -e "$JOB_DIR/dist/"; then
+  rm -rf "$NIXACTIONS_ARTIFACTS_DIR/dist"
+  mkdir -p "$NIXACTIONS_ARTIFACTS_DIR/dist"
   
-  # Save preserving original path structure
-  PARENT_DIR=$(dirname "target/release/myapp")
+  # Preserve directory structure
+  PARENT_DIR=$(dirname "dist/")
   if [ "$PARENT_DIR" != "." ]; then
-    mkdir -p "$NIXACTIONS_ARTIFACTS_DIR/release-binary/$PARENT_DIR"
+    mkdir -p "$NIXACTIONS_ARTIFACTS_DIR/dist/$PARENT_DIR"
   fi
   
-  cp -r "$JOB_DIR/target/release/myapp" "$NIXACTIONS_ARTIFACTS_DIR/release-binary/target/release/myapp"
+  # Copy from container to host
+  /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker cp \
+    "$CONTAINER_ID_OCI_nixos_nix_mount:$JOB_DIR/dist/" \
+    "$NIXACTIONS_ARTIFACTS_DIR/dist/dist/"
 else
-  echo "  ✗ Path not found: target/release/myapp"
+  echo "  ✗ Path not found: dist/"
   return 1
 fi
 
-ARTIFACT_SIZE=$(du -sh "$NIXACTIONS_ARTIFACTS_DIR/release-binary" 2>/dev/null | cut -f1 || echo "unknown")
-echo "  ✓ Saved: release-binary → target/release/myapp (${ARTIFACT_SIZE})"
+ARTIFACT_SIZE=$(du -sh "$NIXACTIONS_ARTIFACTS_DIR/dist" 2>/dev/null | cut -f1 || echo "unknown")
+echo "  ✓ Saved: dist → dist/ (${ARTIFACT_SIZE})"
+
+if [ -z "${CONTAINER_ID_OCI_nixos_nix_mount:-}" ]; then
+  echo "  ✗ Container not initialized"
+  return 1
+fi
+
+JOB_DIR="/workspace/jobs/build"
+
+# Check if path exists in container
+if /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker exec "$CONTAINER_ID_OCI_nixos_nix_mount" test -e "$JOB_DIR/myapp"; then
+  rm -rf "$NIXACTIONS_ARTIFACTS_DIR/myapp"
+  mkdir -p "$NIXACTIONS_ARTIFACTS_DIR/myapp"
+  
+  # Preserve directory structure
+  PARENT_DIR=$(dirname "myapp")
+  if [ "$PARENT_DIR" != "." ]; then
+    mkdir -p "$NIXACTIONS_ARTIFACTS_DIR/myapp/$PARENT_DIR"
+  fi
+  
+  # Copy from container to host
+  /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker cp \
+    "$CONTAINER_ID_OCI_nixos_nix_mount:$JOB_DIR/myapp" \
+    "$NIXACTIONS_ARTIFACTS_DIR/myapp/myapp"
+else
+  echo "  ✗ Path not found: myapp"
+  return 1
+fi
+
+ARTIFACT_SIZE=$(du -sh "$NIXACTIONS_ARTIFACTS_DIR/myapp" 2>/dev/null | cut -f1 || echo "unknown")
+echo "  ✓ Saved: myapp → myapp (${ARTIFACT_SIZE})"
 
 
 }
@@ -223,58 +266,104 @@ echo "  ✓ Saved: release-binary → target/release/myapp (${ARTIFACT_SIZE})"
 
 job_test() {
   # Setup workspace for this job
-  # Lazy init - only create if not exists
-if [ -z "${WORKSPACE_DIR_LOCAL:-}" ]; then
-  WORKSPACE_DIR_LOCAL="/tmp/nixactions/$WORKFLOW_ID"
-  mkdir -p "$WORKSPACE_DIR_LOCAL"
-  export WORKSPACE_DIR_LOCAL
-  echo "→ Local workspace: $WORKSPACE_DIR_LOCAL"
+  # Mode: MOUNT - mount /nix/store from host
+# Lazy init - only create if not exists
+if [ -z "${CONTAINER_ID_OCI_nixos_nix_mount:-}" ]; then
+  # Create and start long-running container with /nix/store mounted
+  CONTAINER_ID_OCI_nixos_nix_mount=$(/nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker create \
+    -v /nix/store:/nix/store:ro \
+    nixos/nix \
+    sleep infinity)
+  
+  /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker start "$CONTAINER_ID_OCI_nixos_nix_mount"
+  
+  export CONTAINER_ID_OCI_nixos_nix_mount
+  
+  # Create workspace directory in container
+  /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker exec "$CONTAINER_ID_OCI_nixos_nix_mount" mkdir -p /workspace
+  
+  echo "→ OCI workspace (mount): container $CONTAINER_ID_OCI_nixos_nix_mount:/workspace"
 fi
 
   
   # Restore artifacts on HOST before executing job
-echo "→ Restoring artifacts: release-binary build-artifacts"
-JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/test"
-if [ -e "$NIXACTIONS_ARTIFACTS_DIR/release-binary" ]; then
-  # Restore to job directory (will be created by executeJob)
-  mkdir -p "$JOB_DIR"
-  cp -r "$NIXACTIONS_ARTIFACTS_DIR/release-binary"/* "$JOB_DIR/" 2>/dev/null || true
-else
-  echo "  ✗ Artifact not found: release-binary"
+echo "→ Restoring artifacts: dist myapp"
+if [ -z "${CONTAINER_ID_OCI_nixos_nix_mount:-}" ]; then
+  echo "  ✗ Container not initialized"
   return 1
 fi
 
-echo "  ✓ Restored: release-binary"
-
-JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/test"
-if [ -e "$NIXACTIONS_ARTIFACTS_DIR/build-artifacts" ]; then
-  # Restore to job directory (will be created by executeJob)
-  mkdir -p "$JOB_DIR"
-  cp -r "$NIXACTIONS_ARTIFACTS_DIR/build-artifacts"/* "$JOB_DIR/" 2>/dev/null || true
+if [ -e "$NIXACTIONS_ARTIFACTS_DIR/dist" ]; then
+  JOB_DIR="/workspace/jobs/test"
+  
+  # Ensure job directory exists in container
+  /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker exec "$CONTAINER_ID_OCI_nixos_nix_mount" mkdir -p "$JOB_DIR"
+  
+  # Copy each file/directory from artifact to container
+  for item in "$NIXACTIONS_ARTIFACTS_DIR/dist"/*; do
+    if [ -e "$item" ]; then
+      /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker cp "$item" "$CONTAINER_ID_OCI_nixos_nix_mount:$JOB_DIR/"
+    fi
+  done
 else
-  echo "  ✗ Artifact not found: build-artifacts"
+  echo "  ✗ Artifact not found: dist"
   return 1
 fi
 
-echo "  ✓ Restored: build-artifacts"
+echo "  ✓ Restored: dist"
+
+if [ -z "${CONTAINER_ID_OCI_nixos_nix_mount:-}" ]; then
+  echo "  ✗ Container not initialized"
+  return 1
+fi
+
+if [ -e "$NIXACTIONS_ARTIFACTS_DIR/myapp" ]; then
+  JOB_DIR="/workspace/jobs/test"
+  
+  # Ensure job directory exists in container
+  /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker exec "$CONTAINER_ID_OCI_nixos_nix_mount" mkdir -p "$JOB_DIR"
+  
+  # Copy each file/directory from artifact to container
+  for item in "$NIXACTIONS_ARTIFACTS_DIR/myapp"/*; do
+    if [ -e "$item" ]; then
+      /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker cp "$item" "$CONTAINER_ID_OCI_nixos_nix_mount:$JOB_DIR/"
+    fi
+  done
+else
+  echo "  ✗ Artifact not found: myapp"
+  return 1
+fi
+
+echo "  ✓ Restored: myapp"
 
 echo ""
 
   
   # Execute job via executor
-  # Create isolated directory for this job
-JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/test"
+  # Ensure workspace is initialized
+if [ -z "${CONTAINER_ID_OCI_nixos_nix_mount:-}" ]; then
+  echo "Error: OCI workspace not initialized for nixos/nix (mode: mount)"
+  exit 1
+fi
+
+/nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker exec \
+   \
+  "$CONTAINER_ID_OCI_nixos_nix_mount" \
+  bash -c 'set -euo pipefail
+
+# Create job directory
+JOB_DIR="/workspace/jobs/test"
 mkdir -p "$JOB_DIR"
 cd "$JOB_DIR"
 
-# Create job-specific env file INSIDE workspace
+# Create job-specific env file INSIDE container workspace
 JOB_ENV="$JOB_DIR/.job-env"
 touch "$JOB_ENV"
 export JOB_ENV
 
 echo "╔════════════════════════════════════════╗"
 echo "║ JOB: test"
-echo "║ EXECUTOR: local"
+echo "║ EXECUTOR: oci-nixos_nix-mount"
 echo "║ WORKDIR: $JOB_DIR"
 echo "╚════════════════════════════════════════╝"
 
@@ -293,9 +382,10 @@ echo "→ test"
   set +a
   
   # Execute action
-  exec /nix/store/p4qnqkh91f8pfpj1hhvnyznsfnjxy9jg-test/bin/test
+  exec /nix/store/rvzpjx5p74ssl0kgi4cqvf5cllnpd3vp-test/bin/test
 )
 
+'
 
   
   
@@ -305,7 +395,7 @@ echo "→ test"
 # Main execution
 main() {
   echo "════════════════════════════════════════"
-  echo " Workflow: artifacts-paths"
+  echo " Workflow: artifacts-simple-oci"
   echo " Execution: GitHub Actions style (parallel)"
   echo " Levels: 2"
   echo "════════════════════════════════════════"

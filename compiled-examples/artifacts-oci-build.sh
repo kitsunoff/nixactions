@@ -4,7 +4,7 @@ set -euo pipefail
 # NixActions workflow - executors own workspace (v2)
 
 # Generate workflow ID
-WORKFLOW_ID="artifacts-simple-$(date +%s)-$$"
+WORKFLOW_ID="artifacts-oci-build-$(date +%s)-$$"
 export WORKFLOW_ID
 
 # Setup artifacts directory on control node
@@ -126,53 +126,105 @@ run_parallel() {
 # Job functions
 job_build() {
   # Setup workspace for this job
-  # Lazy init - only create if not exists
-if [ -z "${WORKSPACE_DIR_LOCAL:-}" ]; then
-  WORKSPACE_DIR_LOCAL="/tmp/nixactions/$WORKFLOW_ID"
-  mkdir -p "$WORKSPACE_DIR_LOCAL"
-  export WORKSPACE_DIR_LOCAL
-  echo "→ Local workspace: $WORKSPACE_DIR_LOCAL"
+  # Mode: BUILD - build custom image with actions
+# Lazy init - only create if not exists
+if [ -z "${CONTAINER_ID_OCI_alpine_build:-}" ]; then
+  # Load custom image
+  echo "→ Loading custom OCI image with actions (this may take a while)..."
+  /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker load < /nix/store/a82qiynyflk94z2nm58qffv8xjghscr1-nixactions-alpine.tar.gz
+  
+  # Create and start container from custom image
+  CONTAINER_ID_OCI_alpine_build=$(/nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker create \
+    nixactions-alpine:latest)
+  
+  /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker start "$CONTAINER_ID_OCI_alpine_build"
+  
+  export CONTAINER_ID_OCI_alpine_build
+  
+  # Create workspace directory in container
+  /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker exec "$CONTAINER_ID_OCI_alpine_build" mkdir -p /workspace
+  
+  echo "→ OCI workspace (build): container $CONTAINER_ID_OCI_alpine_build:/workspace"
+  echo "  Image includes: bash, coreutils, and all action derivations"
 fi
 
   
   
   
   # Execute job via executor
-  # Create isolated directory for this job
-JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/build"
+  # Ensure workspace is initialized
+if [ -z "${CONTAINER_ID_OCI_alpine_build:-}" ]; then
+  echo "Error: OCI workspace not initialized for alpine (mode: build)"
+  exit 1
+fi
+
+/nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker exec \
+   \
+  "$CONTAINER_ID_OCI_alpine_build" \
+  bash -c 'set -euo pipefail
+
+# Create job directory
+JOB_DIR="/workspace/jobs/build"
 mkdir -p "$JOB_DIR"
 cd "$JOB_DIR"
 
+# Create job-specific env file INSIDE container workspace
+JOB_ENV="$JOB_DIR/.job-env"
+touch "$JOB_ENV"
+export JOB_ENV
+
 echo "╔════════════════════════════════════════╗"
 echo "║ JOB: build"
-echo "║ EXECUTOR: local"
+echo "║ EXECUTOR: oci-alpine-build"
 echo "║ WORKDIR: $JOB_DIR"
 echo "╚════════════════════════════════════════╝"
 
 # Set job-level environment
 
 
-# Execute action derivations
+# Execute action derivations as separate processes
+# === build ===
 echo "→ build"
-/nix/store/4yzgh70ix5x9cvrq7fbnchrsvnq1mrdi-build/bin/build
 
+# Execute action with JOB_ENV sourced (in subshell to maintain isolation)
+(
+  # Auto-export all variables from JOB_ENV
+  set -a
+  [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
+  set +a
+  
+  # Execute action
+  exec /nix/store/6lwqiiy35i3d1cjzjbzaicd8cbvkah30-build/bin/build
+)
+
+'
 
   
   # Save artifacts on HOST after job completes
 echo ""
 echo "→ Saving artifacts"
-JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/build"
-if [ -e "$JOB_DIR/dist/" ]; then
+if [ -z "${CONTAINER_ID_OCI_alpine_build:-}" ]; then
+  echo "  ✗ Container not initialized"
+  return 1
+fi
+
+JOB_DIR="/workspace/jobs/build"
+
+# Check if path exists in container
+if /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker exec "$CONTAINER_ID_OCI_alpine_build" test -e "$JOB_DIR/dist/"; then
   rm -rf "$NIXACTIONS_ARTIFACTS_DIR/dist"
   mkdir -p "$NIXACTIONS_ARTIFACTS_DIR/dist"
   
-  # Save preserving original path structure
+  # Preserve directory structure
   PARENT_DIR=$(dirname "dist/")
   if [ "$PARENT_DIR" != "." ]; then
     mkdir -p "$NIXACTIONS_ARTIFACTS_DIR/dist/$PARENT_DIR"
   fi
   
-  cp -r "$JOB_DIR/dist/" "$NIXACTIONS_ARTIFACTS_DIR/dist/dist/"
+  # Copy from container to host
+  /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker cp \
+    "$CONTAINER_ID_OCI_alpine_build:$JOB_DIR/dist/" \
+    "$NIXACTIONS_ARTIFACTS_DIR/dist/dist/"
 else
   echo "  ✗ Path not found: dist/"
   return 1
@@ -181,18 +233,28 @@ fi
 ARTIFACT_SIZE=$(du -sh "$NIXACTIONS_ARTIFACTS_DIR/dist" 2>/dev/null | cut -f1 || echo "unknown")
 echo "  ✓ Saved: dist → dist/ (${ARTIFACT_SIZE})"
 
-JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/build"
-if [ -e "$JOB_DIR/myapp" ]; then
+if [ -z "${CONTAINER_ID_OCI_alpine_build:-}" ]; then
+  echo "  ✗ Container not initialized"
+  return 1
+fi
+
+JOB_DIR="/workspace/jobs/build"
+
+# Check if path exists in container
+if /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker exec "$CONTAINER_ID_OCI_alpine_build" test -e "$JOB_DIR/myapp"; then
   rm -rf "$NIXACTIONS_ARTIFACTS_DIR/myapp"
   mkdir -p "$NIXACTIONS_ARTIFACTS_DIR/myapp"
   
-  # Save preserving original path structure
+  # Preserve directory structure
   PARENT_DIR=$(dirname "myapp")
   if [ "$PARENT_DIR" != "." ]; then
     mkdir -p "$NIXACTIONS_ARTIFACTS_DIR/myapp/$PARENT_DIR"
   fi
   
-  cp -r "$JOB_DIR/myapp" "$NIXACTIONS_ARTIFACTS_DIR/myapp/myapp"
+  # Copy from container to host
+  /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker cp \
+    "$CONTAINER_ID_OCI_alpine_build:$JOB_DIR/myapp" \
+    "$NIXACTIONS_ARTIFACTS_DIR/myapp/myapp"
 else
   echo "  ✗ Path not found: myapp"
   return 1
@@ -207,22 +269,48 @@ echo "  ✓ Saved: myapp → myapp (${ARTIFACT_SIZE})"
 
 job_test() {
   # Setup workspace for this job
-  # Lazy init - only create if not exists
-if [ -z "${WORKSPACE_DIR_LOCAL:-}" ]; then
-  WORKSPACE_DIR_LOCAL="/tmp/nixactions/$WORKFLOW_ID"
-  mkdir -p "$WORKSPACE_DIR_LOCAL"
-  export WORKSPACE_DIR_LOCAL
-  echo "→ Local workspace: $WORKSPACE_DIR_LOCAL"
+  # Mode: BUILD - build custom image with actions
+# Lazy init - only create if not exists
+if [ -z "${CONTAINER_ID_OCI_alpine_build:-}" ]; then
+  # Load custom image
+  echo "→ Loading custom OCI image with actions (this may take a while)..."
+  /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker load < /nix/store/g0izknvq91xknynsbjyhd7rb0yi4vjha-nixactions-alpine.tar.gz
+  
+  # Create and start container from custom image
+  CONTAINER_ID_OCI_alpine_build=$(/nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker create \
+    nixactions-alpine:latest)
+  
+  /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker start "$CONTAINER_ID_OCI_alpine_build"
+  
+  export CONTAINER_ID_OCI_alpine_build
+  
+  # Create workspace directory in container
+  /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker exec "$CONTAINER_ID_OCI_alpine_build" mkdir -p /workspace
+  
+  echo "→ OCI workspace (build): container $CONTAINER_ID_OCI_alpine_build:/workspace"
+  echo "  Image includes: bash, coreutils, and all action derivations"
 fi
 
   
   # Restore artifacts on HOST before executing job
 echo "→ Restoring artifacts: dist myapp"
-JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/test"
+if [ -z "${CONTAINER_ID_OCI_alpine_build:-}" ]; then
+  echo "  ✗ Container not initialized"
+  return 1
+fi
+
 if [ -e "$NIXACTIONS_ARTIFACTS_DIR/dist" ]; then
-  # Restore to job directory (will be created by executeJob)
-  mkdir -p "$JOB_DIR"
-  cp -r "$NIXACTIONS_ARTIFACTS_DIR/dist"/* "$JOB_DIR/" 2>/dev/null || true
+  JOB_DIR="/workspace/jobs/test"
+  
+  # Ensure job directory exists in container
+  /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker exec "$CONTAINER_ID_OCI_alpine_build" mkdir -p "$JOB_DIR"
+  
+  # Copy each file/directory from artifact to container
+  for item in "$NIXACTIONS_ARTIFACTS_DIR/dist"/*; do
+    if [ -e "$item" ]; then
+      /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker cp "$item" "$CONTAINER_ID_OCI_alpine_build:$JOB_DIR/"
+    fi
+  done
 else
   echo "  ✗ Artifact not found: dist"
   return 1
@@ -230,11 +318,23 @@ fi
 
 echo "  ✓ Restored: dist"
 
-JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/test"
+if [ -z "${CONTAINER_ID_OCI_alpine_build:-}" ]; then
+  echo "  ✗ Container not initialized"
+  return 1
+fi
+
 if [ -e "$NIXACTIONS_ARTIFACTS_DIR/myapp" ]; then
-  # Restore to job directory (will be created by executeJob)
-  mkdir -p "$JOB_DIR"
-  cp -r "$NIXACTIONS_ARTIFACTS_DIR/myapp"/* "$JOB_DIR/" 2>/dev/null || true
+  JOB_DIR="/workspace/jobs/test"
+  
+  # Ensure job directory exists in container
+  /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker exec "$CONTAINER_ID_OCI_alpine_build" mkdir -p "$JOB_DIR"
+  
+  # Copy each file/directory from artifact to container
+  for item in "$NIXACTIONS_ARTIFACTS_DIR/myapp"/*; do
+    if [ -e "$item" ]; then
+      /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker cp "$item" "$CONTAINER_ID_OCI_alpine_build:$JOB_DIR/"
+    fi
+  done
 else
   echo "  ✗ Artifact not found: myapp"
   return 1
@@ -246,24 +346,52 @@ echo ""
 
   
   # Execute job via executor
-  # Create isolated directory for this job
-JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/test"
+  # Ensure workspace is initialized
+if [ -z "${CONTAINER_ID_OCI_alpine_build:-}" ]; then
+  echo "Error: OCI workspace not initialized for alpine (mode: build)"
+  exit 1
+fi
+
+/nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker exec \
+   \
+  "$CONTAINER_ID_OCI_alpine_build" \
+  bash -c 'set -euo pipefail
+
+# Create job directory
+JOB_DIR="/workspace/jobs/test"
 mkdir -p "$JOB_DIR"
 cd "$JOB_DIR"
 
+# Create job-specific env file INSIDE container workspace
+JOB_ENV="$JOB_DIR/.job-env"
+touch "$JOB_ENV"
+export JOB_ENV
+
 echo "╔════════════════════════════════════════╗"
 echo "║ JOB: test"
-echo "║ EXECUTOR: local"
+echo "║ EXECUTOR: oci-alpine-build"
 echo "║ WORKDIR: $JOB_DIR"
 echo "╚════════════════════════════════════════╝"
 
 # Set job-level environment
 
 
-# Execute action derivations
+# Execute action derivations as separate processes
+# === test ===
 echo "→ test"
-/nix/store/aixblmm5899jy62w6qdmlpq235cfa3ck-test/bin/test
 
+# Execute action with JOB_ENV sourced (in subshell to maintain isolation)
+(
+  # Auto-export all variables from JOB_ENV
+  set -a
+  [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
+  set +a
+  
+  # Execute action
+  exec /nix/store/39md2kwksmp3dgqfpsly9aszjwrxw28b-test/bin/test
+)
+
+'
 
   
   
@@ -273,7 +401,7 @@ echo "→ test"
 # Main execution
 main() {
   echo "════════════════════════════════════════"
-  echo " Workflow: artifacts-simple"
+  echo " Workflow: artifacts-oci-build"
   echo " Execution: GitHub Actions style (parallel)"
   echo " Levels: 2"
   echo "════════════════════════════════════════"

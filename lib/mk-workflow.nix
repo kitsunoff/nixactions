@@ -50,79 +50,53 @@ let
   extractDeps = actions: 
     lib.unique (lib.concatMap (a: a.deps or []) actions);
   
+  # Convert action attribute to derivation if needed
+  toActionDerivation = action:
+    if builtins.isAttrs action && !(action ? type && action.type == "derivation")
+    then
+      # It's an attribute, convert to derivation
+      let
+        actionName = action.name or "action";
+        actionBash = action.bash or "echo 'No bash script provided'";
+        drv = pkgs.writeScriptBin actionName ''
+          #!${pkgs.bash}/bin/bash
+          set -euo pipefail
+          ${actionBash}
+        '';
+      in
+        drv // {
+          passthru = (drv.passthru or {}) // {
+            name = actionName;
+            bash = actionBash;
+            deps = action.deps or [];
+            env = action.env or {};
+            workdir = action.workdir or null;
+            condition = action.condition or null;
+          };
+        }
+    else
+      # Already a derivation - try to extract bash from it
+      action // {
+        passthru = (action.passthru or {}) // {
+          bash = action.passthru.bash or null;
+        };
+      };
+  
   # Generate single job bash function
   generateJob = jobName: job:
     let
       executor = job.executor;
-      allDeps = extractDeps job.actions;
+      
+      # Convert actions to derivations (if not already)
+      actionDerivations = map toActionDerivation job.actions;
       
       # Job-level environment
       jobEnv = lib.attrsets.mergeAttrsList [ env (job.env or {}) ];
       
-      # Setup job-level env vars (done once for entire job)
-      jobEnvSetup = lib.concatStringsSep "\n" (
-        lib.mapAttrsToList (k: v: 
-          ''export ${k}=${lib.escapeShellArg (toString v)}''
-        ) jobEnv
-      );
-      
-      # Compose actions into single script
-      actionsScript = lib.concatMapStringsSep "\n\n" (action:
-        let
-          # Check if action has env overrides
-          hasEnvOverride = (action.env or {}) != {};
-          
-          # Action-specific env (only the overrides)
-          actionEnvOverrides = lib.concatStringsSep "\n" (
-            lib.mapAttrsToList (k: v: 
-              ''export ${k}=${lib.escapeShellArg (toString v)}''
-            ) (action.env or {})
-          );
-          
-          wdSetup = lib.optionalString (action.workdir or null != null)
-            "cd ${action.workdir}";
-          
-          # If action has env overrides, run in subshell to isolate changes
-          scriptBody = ''
-            ${wdSetup}
-            ${action.bash}
-          '';
-          
-        in ''
-          # === ${action.name or "action"} ===
-          ${if hasEnvOverride then ''
-            # Action has env overrides - run in subshell
-            (
-              ${actionEnvOverrides}
-              ${scriptBody}
-            )
-          '' else scriptBody}
-        ''
-      ) job.actions;
-      
-      # Job script to be executed by executor (NO artifact handling)
-      jobScript = ''
-        # Setup PATH with all job dependencies
-        ${lib.optionalString (allDeps != []) ''
-          export PATH=${lib.makeBinPath allDeps}:$PATH
-        ''}
-        
-        # Setup job-level environment variables
-        ${jobEnvSetup}
-        
-        # Execute actions (all in the same job directory)
-        ${actionsScript}
-      '';
-      
     in ''
       job_${jobName}() {
         # Setup workspace for this job
-        ${executor.setupWorkspace}
-        
-        ${lib.optionalString (executor.canProvision && allDeps != []) ''
-          echo "→ Provisioning ${toString (builtins.length allDeps)} derivations..."
-          ${executor.provision allDeps}
-        ''}
+        ${executor.setupWorkspace { inherit actionDerivations; }}
         
         ${lib.optionalString ((job.inputs or []) != []) ''
           # Restore artifacts on HOST before executing job
@@ -136,8 +110,8 @@ let
         
         # Execute job via executor
         ${executor.executeJob {
-          inherit jobName;
-          script = jobScript;
+          inherit jobName actionDerivations;
+          env = jobEnv;
         }}
         
         ${lib.optionalString ((job.outputs or {}) != {}) ''
@@ -152,9 +126,6 @@ let
             '') job.outputs
           )}
         ''}
-        
-        # Cleanup workspace after this job
-        ${executor.cleanupWorkspace}
       }
     '';
 
