@@ -60,7 +60,6 @@ let
         actionBash = action.bash or "echo 'No bash script provided'";
         drv = pkgs.writeScriptBin actionName ''
           #!${pkgs.bash}/bin/bash
-          set -euo pipefail
           ${actionBash}
         '';
       in
