@@ -183,16 +183,13 @@ echo "╚═══════════════════════�
 # === build ===
 echo "→ build"
 
-# Execute action with JOB_ENV sourced (in subshell to maintain isolation)
-(
-  # Auto-export all variables from JOB_ENV
-  set -a
-  [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
-  set +a
-  
-  # Execute action
-  exec /nix/store/7i5kwq9ji4mzcfyjn6w23bisxy7119d2-build/bin/build
-)
+# Source JOB_ENV and export all variables before running action
+set -a
+[ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
+set +a
+
+# Execute action as separate process
+/nix/store/7i5kwq9ji4mzcfyjn6w23bisxy7119d2-build/bin/build
 
 '
 
@@ -374,16 +371,13 @@ echo "╚═══════════════════════�
 # === test ===
 echo "→ test"
 
-# Execute action with JOB_ENV sourced (in subshell to maintain isolation)
-(
-  # Auto-export all variables from JOB_ENV
-  set -a
-  [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
-  set +a
-  
-  # Execute action
-  exec /nix/store/rvzpjx5p74ssl0kgi4cqvf5cllnpd3vp-test/bin/test
-)
+# Source JOB_ENV and export all variables before running action
+set -a
+[ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
+set +a
+
+# Execute action as separate process
+/nix/store/rvzpjx5p74ssl0kgi4cqvf5cllnpd3vp-test/bin/test
 
 '
 

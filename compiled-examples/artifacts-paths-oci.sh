@@ -183,16 +183,13 @@ echo "╚═══════════════════════�
 # === build ===
 echo "→ build"
 
-# Execute action with JOB_ENV sourced (in subshell to maintain isolation)
-(
-  # Auto-export all variables from JOB_ENV
-  set -a
-  [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
-  set +a
-  
-  # Execute action
-  exec /nix/store/hdwpjkhis0y7cv1zfcrlzn7f64fza148-build/bin/build
-)
+# Source JOB_ENV and export all variables before running action
+set -a
+[ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
+set +a
+
+# Execute action as separate process
+/nix/store/hdwpjkhis0y7cv1zfcrlzn7f64fza148-build/bin/build
 
 '
 
@@ -374,16 +371,13 @@ echo "╚═══════════════════════�
 # === test ===
 echo "→ test"
 
-# Execute action with JOB_ENV sourced (in subshell to maintain isolation)
-(
-  # Auto-export all variables from JOB_ENV
-  set -a
-  [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
-  set +a
-  
-  # Execute action
-  exec /nix/store/6sch2vjgq7k8s8qpwi1r8k6klld149qh-test/bin/test
-)
+# Source JOB_ENV and export all variables before running action
+set -a
+[ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
+set +a
+
+# Execute action as separate process
+/nix/store/6sch2vjgq7k8s8qpwi1r8k6klld149qh-test/bin/test
 
 '
 

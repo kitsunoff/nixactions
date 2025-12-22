@@ -62,16 +62,13 @@ mkExecutor {
         # === ${actionName} ===
         echo "→ ${actionName}"
         
-        # Execute action with JOB_ENV sourced (in subshell to maintain isolation)
-        (
-          # Auto-export all variables from JOB_ENV
-          set -a
-          [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
-          set +a
-          
-          # Execute action
-          exec ${action}/bin/${actionName}
-        )
+        # Source JOB_ENV and export all variables before running action
+        set -a
+        [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
+        set +a
+        
+        # Execute action as separate process
+        ${action}/bin/${lib.escapeShellArg actionName}
       ''
     ) actionDerivations}
   '';

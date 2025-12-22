@@ -161,46 +161,37 @@ echo "╚═══════════════════════�
 # === generate-version ===
 echo "→ generate-version"
 
-# Execute action with JOB_ENV sourced (in subshell to maintain isolation)
-(
-  # Auto-export all variables from JOB_ENV
-  set -a
-  [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
-  set +a
-  
-  # Execute action
-  exec /nix/store/yppl7mvsdmnjj3bg9bknb1b0mcaazhw3-generate-version/bin/generate-version
-)
+# Source JOB_ENV and export all variables before running action
+set -a
+[ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
+set +a
+
+# Execute action as separate process
+/nix/store/yppl7mvsdmnjj3bg9bknb1b0mcaazhw3-generate-version/bin/generate-version
 
 
 # === build-app ===
 echo "→ build-app"
 
-# Execute action with JOB_ENV sourced (in subshell to maintain isolation)
-(
-  # Auto-export all variables from JOB_ENV
-  set -a
-  [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
-  set +a
-  
-  # Execute action
-  exec /nix/store/b6y5fscrm1k8d6fnnsflkqz0y5w7qmnj-build-app/bin/build-app
-)
+# Source JOB_ENV and export all variables before running action
+set -a
+[ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
+set +a
+
+# Execute action as separate process
+/nix/store/b6y5fscrm1k8d6fnnsflkqz0y5w7qmnj-build-app/bin/build-app
 
 
 # === verify-build ===
 echo "→ verify-build"
 
-# Execute action with JOB_ENV sourced (in subshell to maintain isolation)
-(
-  # Auto-export all variables from JOB_ENV
-  set -a
-  [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
-  set +a
-  
-  # Execute action
-  exec /nix/store/0zcsa9f71nl16bzyf4zn3g6n1xkfgvbb-verify-build/bin/verify-build
-)
+# Source JOB_ENV and export all variables before running action
+set -a
+[ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
+set +a
+
+# Execute action as separate process
+/nix/store/0zcsa9f71nl16bzyf4zn3g6n1xkfgvbb-verify-build/bin/verify-build
 
 
   
@@ -283,31 +274,25 @@ echo "╚═══════════════════════�
 # === multi-step-calculation ===
 echo "→ multi-step-calculation"
 
-# Execute action with JOB_ENV sourced (in subshell to maintain isolation)
-(
-  # Auto-export all variables from JOB_ENV
-  set -a
-  [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
-  set +a
-  
-  # Execute action
-  exec /nix/store/d11clxjfbfsz507z5gkky22qwv0360ib-multi-step-calculation/bin/multi-step-calculation
-)
+# Source JOB_ENV and export all variables before running action
+set -a
+[ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
+set +a
+
+# Execute action as separate process
+/nix/store/d11clxjfbfsz507z5gkky22qwv0360ib-multi-step-calculation/bin/multi-step-calculation
 
 
 # === use-calculations ===
 echo "→ use-calculations"
 
-# Execute action with JOB_ENV sourced (in subshell to maintain isolation)
-(
-  # Auto-export all variables from JOB_ENV
-  set -a
-  [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
-  set +a
-  
-  # Execute action
-  exec /nix/store/jr8aw0jqs7yggbqrpvsj09zpjq5jgp3y-use-calculations/bin/use-calculations
-)
+# Source JOB_ENV and export all variables before running action
+set -a
+[ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
+set +a
+
+# Execute action as separate process
+/nix/store/jr8aw0jqs7yggbqrpvsj09zpjq5jgp3y-use-calculations/bin/use-calculations
 
 
   
@@ -352,16 +337,13 @@ echo "╚═══════════════════════�
 # === summary ===
 echo "→ summary"
 
-# Execute action with JOB_ENV sourced (in subshell to maintain isolation)
-(
-  # Auto-export all variables from JOB_ENV
-  set -a
-  [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
-  set +a
-  
-  # Execute action
-  exec /nix/store/ynd06pfq2vvlikrnkqn7jwn1a8pml19b-summary/bin/summary
-)
+# Source JOB_ENV and export all variables before running action
+set -a
+[ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
+set +a
+
+# Execute action as separate process
+/nix/store/ynd06pfq2vvlikrnkqn7jwn1a8pml19b-summary/bin/summary
 
 
   
@@ -421,31 +403,25 @@ echo "╚═══════════════════════�
 # === parse-build-info ===
 echo "→ parse-build-info"
 
-# Execute action with JOB_ENV sourced (in subshell to maintain isolation)
-(
-  # Auto-export all variables from JOB_ENV
-  set -a
-  [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
-  set +a
-  
-  # Execute action
-  exec /nix/store/lqq2w1h867wgricy5ihnl0r77j2qhkfd-parse-build-info/bin/parse-build-info
-)
+# Source JOB_ENV and export all variables before running action
+set -a
+[ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
+set +a
+
+# Execute action as separate process
+/nix/store/lqq2w1h867wgricy5ihnl0r77j2qhkfd-parse-build-info/bin/parse-build-info
 
 
 # === use-parsed-version ===
 echo "→ use-parsed-version"
 
-# Execute action with JOB_ENV sourced (in subshell to maintain isolation)
-(
-  # Auto-export all variables from JOB_ENV
-  set -a
-  [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
-  set +a
-  
-  # Execute action
-  exec /nix/store/a2zb18grkl07nviiczybys0x21xjwhck-use-parsed-version/bin/use-parsed-version
-)
+# Source JOB_ENV and export all variables before running action
+set -a
+[ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
+set +a
+
+# Execute action as separate process
+/nix/store/a2zb18grkl07nviiczybys0x21xjwhck-use-parsed-version/bin/use-parsed-version
 
 
   
