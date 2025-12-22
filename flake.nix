@@ -76,6 +76,9 @@
           # Example: Multi-executor workflow (local + OCI)
           example-multi-executor = import ./examples/multi-executor.nix { inherit pkgs platform; };
           
+          # Example: Test action conditions
+          example-test-action-conditions = import ./examples/test-action-conditions.nix { inherit pkgs platform; };
+          
           # Set default to complete example
           default = self.packages.${system}.example-complete;
         }

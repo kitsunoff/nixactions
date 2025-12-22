@@ -54,23 +54,81 @@ mkExecutor {
       ) env
     )}
     
+    # Track action failures
+    ACTION_FAILED=false
+    
     # Execute action derivations as separate processes
     ${lib.concatMapStringsSep "\n\n" (action: 
       let
         actionName = action.passthru.name or (builtins.baseNameOf action);
+        actionCondition = 
+          if action.passthru.condition != null 
+          then action.passthru.condition 
+          else "success()";
       in ''
         # === ${actionName} ===
-        echo "→ ${actionName}"
         
-        # Source JOB_ENV and export all variables before running action
-        set -a
-        [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
-        set +a
+        # Check action condition
+        _should_run=true
+        ACTION_CONDITION="${actionCondition}"
+        case "$ACTION_CONDITION" in
+          'always()')
+            # Always run
+            ;;
+          'success()')
+            # Run only if no previous action failed
+            if [ "$ACTION_FAILED" = "true" ]; then
+              _should_run=false
+            fi
+            ;;
+          'failure()')
+            # Run only if a previous action failed
+            if [ "$ACTION_FAILED" = "false" ]; then
+              _should_run=false
+            fi
+            ;;
+          'cancelled()')
+            # Would need workflow-level cancellation support
+            _should_run=false
+            ;;
+          *)
+            # Bash script condition - evaluate it
+            if ! ($ACTION_CONDITION); then
+              _should_run=false
+            fi
+            ;;
+        esac
         
-        # Execute action as separate process
-        ${action}/bin/${lib.escapeShellArg actionName}
+        if [ "$_should_run" = "false" ]; then
+          echo "⊘ Skipping ${actionName} (condition: $ACTION_CONDITION)"
+        else
+          echo "→ ${actionName}"
+          
+          # Source JOB_ENV and export all variables before running action
+          set -a
+          [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
+          set +a
+          
+          # Execute action as separate process
+          ${action}/bin/${lib.escapeShellArg actionName}
+          _action_exit_code=$?
+          
+          # Track failure for subsequent actions
+          if [ $_action_exit_code -ne 0 ]; then
+            ACTION_FAILED=true
+            echo "✗ Action ${actionName} failed (exit code: $_action_exit_code)"
+            # Don't exit immediately - let conditions handle flow
+          fi
+        fi
       ''
     ) actionDerivations}
+    
+    # Fail job if any action failed
+    if [ "$ACTION_FAILED" = "true" ]; then
+      echo ""
+      echo "✗ Job failed due to action failures"
+      exit 1
+    fi
   '';
   
   provision = null;
