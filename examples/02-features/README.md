@@ -140,6 +140,69 @@ nix run ..#example-test-isolation
 
 ---
 
+### `matrix-builds.nix`
+**Compile-time matrix job generation** for testing across multiple configurations.
+
+```bash
+nix run ..#example-matrix-builds
+```
+
+**What it demonstrates:**
+- `platform.mkMatrixJobs` - compile-time job generation
+- Cartesian product of matrix dimensions
+- Template functions with matrix variables
+- `${{ matrix.var }}` syntax substitution
+- Integration with artifacts, needs, executors
+- Auto-generated job names
+
+**Example:**
+```nix
+matrixJobs = platform.mkMatrixJobs {
+  name = "test";
+  matrix = {
+    node = ["18" "20" "22"];
+    os = ["ubuntu" "alpine"];
+  };
+  jobTemplate = { node, os }: {
+    executor = platform.executors.oci { 
+      image = "node:${node}-${os}"; 
+    };
+    actions = [{
+      bash = "npm test";
+    }];
+  };
+};
+# Generates 6 jobs: test-node-18-os-ubuntu, test-node-18-os-alpine, etc.
+```
+
+**Use cases:**
+- Cross-platform testing (multiple OSes, architectures)
+- Multi-version testing (node, python, ruby versions)
+- Build matrix (compilers, configurations)
+
+---
+
+### `structured-logging.nix`
+**Structured logging formats** for better CI/CD observability.
+
+```bash
+nix run ..#example-structured-logging
+```
+
+**What it demonstrates:**
+- Three log formats: structured (default), JSON, simple
+- Timestamp with milliseconds
+- Duration tracking per action
+- Exit code reporting
+- Runtime format override via `NIXACTIONS_LOG_FORMAT`
+
+**Use cases:**
+- Parsing logs with jq
+- Integration with log aggregation systems
+- Human-readable output for development
+
+---
+
 ## Feature Matrix
 
 | Feature | Example |
@@ -151,3 +214,5 @@ nix run ..#example-test-isolation
 | Multiple executors | multi-executor.nix |
 | Environment variables | test-env.nix |
 | Job isolation | test-isolation.nix |
+| Matrix builds | matrix-builds.nix |
+| Structured logging | structured-logging.nix |

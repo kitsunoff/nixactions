@@ -65,6 +65,9 @@
           # Example: Structured logging
           example-structured-logging = import ./examples/02-features/structured-logging.nix { inherit pkgs platform; };
           
+          # Example: Matrix builds (compile-time job generation)
+          example-matrix-builds = import ./examples/02-features/matrix-builds.nix { inherit pkgs platform; };
+          
           # ===== 03-real-world: Production pipelines =====
           
           # Example: Complete CI/CD pipeline
@@ -116,6 +119,7 @@
             echo "     nix run .#example-nix-shell"
             echo "     nix run .#example-artifacts"
             echo "     nix run .#example-multi-executor"
+            echo "     nix run .#example-matrix-builds"
           '';
         };
       });

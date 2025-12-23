@@ -200,41 +200,76 @@ Error in workflow 'ci', job 'test', action 'deploy':
 
 ---
 
-### 7. **Matrix Builds**
+### 7. **Matrix Builds** ✅ IMPLEMENTED
 ```nix
 {
-  jobs = {
-    test = {
-      strategy = {
-        matrix = {
-          node = ["18" "20" "22"];
-          os = ["ubuntu" "macos"];
-        };
-      };
-      
+  # Generate matrix jobs at compile-time
+  matrixJobs = platform.mkMatrixJobs {
+    name = "test";
+    
+    matrix = {
+      node = ["18" "20" "22"];
+      os = ["ubuntu" "alpine"];
+    };
+    
+    # Job template receives matrix variables
+    jobTemplate = { node, os }: {
       executor = platform.executors.oci { 
-        image = "node:${{ matrix.node }}"; 
+        image = "node:${node}-${os}"; 
       };
       
       actions = [{
-        bash = "npm test";
+        name = "test-node-${node}-on-${os}";
+        bash = ''
+          echo "Testing Node.js ${node} on ${os}"
+          npm test
+        '';
       }];
-      
-      # Creates 6 jobs:
-      # test-node18-ubuntu, test-node18-macos,
-      # test-node20-ubuntu, test-node20-macos,
-      # test-node22-ubuntu, test-node22-macos
+    };
+  };
+  
+  # Merge with regular jobs
+  jobs = matrixJobs // {
+    deploy = {
+      # Can depend on specific matrix jobs
+      needs = ["test-node-18-os-ubuntu"];
+      actions = [{ bash = "deploy"; }];
     };
   };
 }
+```
+
+**Реализовано:**
+- ✅ Compile-time матричная генерация jobs
+- ✅ Декартово произведение всех комбинаций matrix dimensions
+- ✅ Template функция получает matrix переменные как аргументы
+- ✅ Нативная Nix интерполяция `${var}` в bash скриптах, action names, outputs
+- ✅ Автоматические имена jobs: `<name>-<dim1>-<value1>-<dim2>-<value2>`
+- ✅ Полная интеграция с needs, artifacts, executors
+- ✅ Пример: `nix run .#example-matrix-builds`
+
+**Использование:**
+```bash
+# Run matrix builds example
+nix run .#example-matrix-builds
+
+# Example generates:
+# - 6 test jobs (3 node versions × 2 OSes)
+# - 4 build jobs (2 architectures × 2 distros)
+# - 2 regular jobs (deploy, summary)
+# Total: 12 jobs from 2 matrix definitions
 ```
 
 **Почему важно:**
 - Тестирование на разных версиях (node, python, ruby)
 - Cross-platform testing (linux, macos, windows)
 - Параллельное выполнение комбинаций
+- DRY - избежание дублирования jobs
 
-**Альтернатива сейчас:** Дублировать jobs вручную.
+**Отличия от GitHub Actions:**
+- Чистый compile-time подход (никакого runtime overhead)
+- Type-safe благодаря Nix
+- Matrix переменные доступны как функциональные аргументы
 
 ---
 
@@ -972,7 +1007,7 @@ Running tests...
 
 ### Should Have (для 2.0)
 6. Job outputs
-7. Matrix builds
+7. Matrix builds ✅
 8. Secrets masking
 9. Caching
 10. CLI tool
