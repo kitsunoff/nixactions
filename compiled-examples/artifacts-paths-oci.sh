@@ -7,6 +7,125 @@ set -euo pipefail
 WORKFLOW_ID="artifacts-paths-oci-$(date +%s)-$$"
 export WORKFLOW_ID
 
+# Export workflow name for logging
+export WORKFLOW_NAME="artifacts-paths-oci"
+
+# Export log format (default: structured)
+export NIXACTIONS_LOG_FORMAT=${NIXACTIONS_LOG_FORMAT:-structured}
+
+# ============================================================
+# Structured Logging Functions
+# ============================================================
+
+_log_timestamp() {
+  date -u +"%Y-%m-%dT%H:%M:%S.%3NZ" 2>/dev/null || date -u +"%Y-%m-%dT%H:%M:%SZ"
+}
+
+# Universal log function: _log key1 value1 key2 value2 ... message
+# Last argument is always the message
+# Example: _log job test action checkout duration 1.5 exit_code 0 "Completed"
+_log() {
+  local -A fields=()
+  local message=""
+  
+  # Parse arguments: key-value pairs, last one is message
+  while [ $# -gt 0 ]; do
+    if [ $# -eq 1 ]; then
+      # Last argument is the message
+      message="$1"
+      shift
+    else
+      # Key-value pair
+      fields["$1"]="$2"
+      shift 2
+    fi
+  done
+  
+  # Build log entry based on format
+  if [ "$NIXACTIONS_LOG_FORMAT" = "simple" ]; then
+    # Simple format: just the message (or with action name)
+    if [ -n "${fields[action]:-}" ]; then
+      echo "${fields[event]:-→} ${fields[action]} $message" >&2
+    else
+      echo "$message" >&2
+    fi
+  elif [ "$NIXACTIONS_LOG_FORMAT" = "json" ]; then
+    # JSON format
+    local json="{\"timestamp\":\"$(_log_timestamp)\",\"workflow\":\"$WORKFLOW_NAME\""
+    
+    # Add all fields
+    for key in "${!fields[@]}"; do
+      local value="${fields[$key]}"
+      # Check if value is a number
+      if [[ "$value" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+        json="$json,\"$key\":$value"
+      else
+        # Escape quotes for JSON
+        value=$(echo "$value" | sed 's/"/\\"/g')
+        json="$json,\"$key\":\"$value\""
+      fi
+    done
+    
+    json="$json,\"message\":\"$message\"}"
+    echo "$json" >&2
+  else
+    # Structured format (default)
+    local prefix="[$(_log_timestamp)] [workflow:$WORKFLOW_NAME]"
+    
+    # Add job and action if present
+    if [ -n "${fields[job]:-}" ]; then
+      prefix="$prefix [job:${fields[job]}]"
+    fi
+    if [ -n "${fields[action]:-}" ]; then
+      prefix="$prefix [action:${fields[action]}]"
+    fi
+    
+    # Build details from remaining fields
+    local details=""
+    for key in "${!fields[@]}"; do
+      if [ "$key" != "job" ] && [ "$key" != "action" ] && [ "$key" != "event" ]; then
+        if [ -z "$details" ]; then
+          details="($key: ${fields[$key]}"
+        else
+          details="$details, $key: ${fields[$key]}"
+        fi
+      fi
+    done
+    if [ -n "$details" ]; then
+      details="$details)"
+    fi
+    
+    echo "$prefix $message ${details}" >&2
+  fi
+}
+
+# Wrap command output with structured logging
+_log_line() {
+  local job="$1"
+  local action="$2"
+  while IFS= read -r line; do
+    _log job "$job" action "$action" event "output" "$line"
+  done
+}
+
+# Log job-level events (convenience wrapper)
+_log_job() {
+  _log job "$@"
+}
+
+# Log workflow-level events (convenience wrapper)
+_log_workflow() {
+  _log "$@"
+}
+
+# Export functions so they're available in subshells and executors
+export -f _log_timestamp
+export -f _log
+export -f _log_line
+export -f _log_job
+export -f _log_workflow
+
+
 # Setup artifacts directory on control node
 NIXACTIONS_ARTIFACTS_DIR="${NIXACTIONS_ARTIFACTS_DIR:-$HOME/.cache/nixactions/$WORKFLOW_ID/artifacts}"
 mkdir -p "$NIXACTIONS_ARTIFACTS_DIR"
@@ -60,24 +179,24 @@ run_job() {
   
   # Check condition
   if ! check_condition "$condition"; then
-    echo "⊘ Skipping $job_name (condition not met: $condition)"
+    _log_job "$job_name" condition "$condition" event "⊘" "Skipped"
     JOB_STATUS[$job_name]="skipped"
     return 0
   fi
   
   # Execute job in subshell (isolation by design)
   if ( job_$job_name ); then
-    echo "✓ Job $job_name succeeded"
+    _log_job "$job_name" event "✓" "Job succeeded"
     JOB_STATUS[$job_name]="success"
     return 0
   else
     local exit_code=$?
-    echo "✗ Job $job_name failed (exit code: $exit_code)"
+    _log_job "$job_name" exit_code $exit_code event "✗" "Job failed"
     FAILED_JOBS+=("$job_name")
     JOB_STATUS[$job_name]="failure"
     
     if [ "$continue_on_error" = "true" ]; then
-      echo "→ Continuing despite failure (continueOnError: true)"
+      _log_job "$job_name" continue_on_error true event "→" "Continuing despite failure"
       return 0
     else
       return $exit_code
@@ -113,8 +232,8 @@ run_parallel() {
     # Check if we should stop
     for spec in "${job_specs[@]}"; do
       IFS='|' read -r job_name condition continue_on_error <<< "$spec"
-      if [ "${JOB_STATUS[$job_name]}" = "failure" ] && [ "$continue_on_error" != "true" ]; then
-        echo "⊘ Stopping workflow due to job failure: $job_name"
+      if [ "${JOB_STATUS[$job_name]:-unknown}" = "failure" ] && [ "$continue_on_error" != "true" ]; then
+        _log_workflow failed_job "$job_name" event "⊘" "Stopping workflow due to job failure"
         return 1
       fi
     done
@@ -142,7 +261,7 @@ if [ -z "${CONTAINER_ID_OCI_nixos_nix_mount:-}" ]; then
   # Create workspace directory in container
   /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker exec "$CONTAINER_ID_OCI_nixos_nix_mount" mkdir -p /workspace
   
-  echo "→ OCI workspace (mount): container $CONTAINER_ID_OCI_nixos_nix_mount:/workspace"
+  _log_workflow executor "oci-nixos_nix-mount" container "$CONTAINER_ID_OCI_nixos_nix_mount" workspace "/workspace" event "→" "Workspace created"
 fi
 
   
@@ -151,14 +270,14 @@ fi
   # Execute job via executor
   # Ensure workspace is initialized
 if [ -z "${CONTAINER_ID_OCI_nixos_nix_mount:-}" ]; then
-  echo "Error: OCI workspace not initialized for nixos/nix (mode: mount)"
+  _log_workflow executor "oci-nixos_nix-mount" event "✗" "Workspace not initialized"
   exit 1
 fi
 
 /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker exec \
    \
   "$CONTAINER_ID_OCI_nixos_nix_mount" \
-  bash -c 'set -euo pipefail
+  bash -c 'set -uo pipefail
 
 # Create job directory
 JOB_DIR="/workspace/jobs/build"
@@ -170,35 +289,110 @@ JOB_ENV="$JOB_DIR/.job-env"
 touch "$JOB_ENV"
 export JOB_ENV
 
-echo "╔════════════════════════════════════════╗"
-echo "║ JOB: build"
-echo "║ EXECUTOR: oci-nixos_nix-mount"
-echo "║ WORKDIR: $JOB_DIR"
-echo "╚════════════════════════════════════════╝"
+_log_job "build" executor "oci-nixos_nix-mount" workdir "$JOB_DIR" event "▶" "Job starting"
+
 
 # Set job-level environment
 
 
+# Track action failures
+ACTION_FAILED=false
+
 # Execute action derivations as separate processes
 # === build ===
-echo "→ build"
 
-# Source JOB_ENV and export all variables before running action
-set -a
-[ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
-set +a
+# Check action condition
+_should_run=true
+ACTION_CONDITION="success()"
+case "$ACTION_CONDITION" in
+  '\''always()'\'')
+    # Always run
+    ;;
+  '\''success()'\'')
+    # Run only if no previous action failed
+    if [ "$ACTION_FAILED" = "true" ]; then
+      _should_run=false
+    fi
+    ;;
+  '\''failure()'\'')
+    # Run only if a previous action failed
+    if [ "$ACTION_FAILED" = "false" ]; then
+      _should_run=false
+    fi
+    ;;
+  '\''cancelled()'\'')
+    # Would need workflow-level cancellation support
+    _should_run=false
+    ;;
+  *)
+    # Bash script condition - evaluate it
+    if ! ($ACTION_CONDITION); then
+      _should_run=false
+    fi
+    ;;
+esac
 
-# Execute action as separate process
-/nix/store/r1s7mr7ypkxnkgs5lmmsky3hfs8kg6r9-build/bin/build
+if [ "$_should_run" = "false" ]; then
+  echo "⊘ Skipping build (condition: $ACTION_CONDITION)"
+else
+  _log job "build" action "build" event "→" "Starting"
+  
+  # Record start time (use fallback if nanoseconds not available)
+  _action_start_ns=$(date +%s%N 2>/dev/null || date +%s)
+  
+  # Source JOB_ENV and export all variables before running action
+  set -a
+  [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
+  set +a
+  
+  # Execute action as separate process with output wrapping
+  set +e
+  if [ "$NIXACTIONS_LOG_FORMAT" = "simple" ]; then
+    # Simple format - pass through unchanged
+    /nix/store/r1s7mr7ypkxnkgs5lmmsky3hfs8kg6r9-build/bin/build
+    _action_exit_code=$?
+  else
+    # Structured/JSON format - wrap each line
+    /nix/store/r1s7mr7ypkxnkgs5lmmsky3hfs8kg6r9-build/bin/build 2>&1 | _log_line "build" "build"
+    _action_exit_code=${PIPESTATUS[0]}
+  fi
+  set -e
+  
+  # Calculate duration
+  _action_end_ns=$(date +%s%N 2>/dev/null || date +%s)
+  if echo "$_action_start_ns" | grep -q "N"; then
+    # Fallback: seconds only
+    _action_duration_s=$((_action_end_ns - _action_start_ns))
+    _action_duration_ms=$((_action_duration_s * 1000))
+  else
+    # Nanoseconds available
+    _action_duration_ms=$(( (_action_end_ns - _action_start_ns) / 1000000 ))
+    _action_duration_s=$(echo "scale=3; $_action_duration_ms / 1000" | bc 2>/dev/null || echo $((_action_duration_ms / 1000)))
+  fi
+  
+  # Log result and track failure for subsequent actions
+  if [ $_action_exit_code -ne 0 ]; then
+    ACTION_FAILED=true
+    _log job "build" action "build" duration "${_action_duration_s}s" exit_code $_action_exit_code event "✗" "Failed"
+    # Don'\''t exit immediately - let conditions handle flow
+  else
+    _log job "build" action "build" duration "${_action_duration_s}s" exit_code $_action_exit_code event "✓" "Completed"
+  fi
+fi
 
+
+# Fail job if any action failed
+if [ "$ACTION_FAILED" = "true" ]; then
+  _log_job "build" event "✗" "Job failed due to action failures"
+  exit 1
+fi
 '
 
   
   # Save artifacts on HOST after job completes
-echo ""
-echo "→ Saving artifacts"
+_log_job "build" event "→" "Saving artifacts"
 if [ -z "${CONTAINER_ID_OCI_nixos_nix_mount:-}" ]; then
-  echo "  ✗ Container not initialized"
+  _log_workflow event "✗" "Container not initialized"
   return 1
 fi
 
@@ -220,7 +414,7 @@ if /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker exec "$C
     "$CONTAINER_ID_OCI_nixos_nix_mount:$JOB_DIR/build/dist/" \
     "$NIXACTIONS_ARTIFACTS_DIR/build-artifacts/build/dist/"
 else
-  echo "  ✗ Path not found: build/dist/"
+  _log_workflow artifact "build-artifacts" path "build/dist/" event "✗" "Path not found"
   return 1
 fi
 
@@ -228,7 +422,7 @@ ARTIFACT_SIZE=$(du -sh "$NIXACTIONS_ARTIFACTS_DIR/build-artifacts" 2>/dev/null |
 echo "  ✓ Saved: build-artifacts → build/dist/ (${ARTIFACT_SIZE})"
 
 if [ -z "${CONTAINER_ID_OCI_nixos_nix_mount:-}" ]; then
-  echo "  ✗ Container not initialized"
+  _log_workflow event "✗" "Container not initialized"
   return 1
 fi
 
@@ -250,7 +444,7 @@ if /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker exec "$C
     "$CONTAINER_ID_OCI_nixos_nix_mount:$JOB_DIR/target/release/myapp" \
     "$NIXACTIONS_ARTIFACTS_DIR/release-binary/target/release/myapp"
 else
-  echo "  ✗ Path not found: target/release/myapp"
+  _log_workflow artifact "release-binary" path "target/release/myapp" event "✗" "Path not found"
   return 1
 fi
 
@@ -279,14 +473,14 @@ if [ -z "${CONTAINER_ID_OCI_nixos_nix_mount:-}" ]; then
   # Create workspace directory in container
   /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker exec "$CONTAINER_ID_OCI_nixos_nix_mount" mkdir -p /workspace
   
-  echo "→ OCI workspace (mount): container $CONTAINER_ID_OCI_nixos_nix_mount:/workspace"
+  _log_workflow executor "oci-nixos_nix-mount" container "$CONTAINER_ID_OCI_nixos_nix_mount" workspace "/workspace" event "→" "Workspace created"
 fi
 
   
   # Restore artifacts on HOST before executing job
-echo "→ Restoring artifacts: release-binary build-artifacts"
+_log_job "test" artifacts "release-binary build-artifacts" event "→" "Restoring artifacts"
 if [ -z "${CONTAINER_ID_OCI_nixos_nix_mount:-}" ]; then
-  echo "  ✗ Container not initialized"
+  _log_workflow event "✗" "Container not initialized"
   return 1
 fi
 
@@ -303,14 +497,14 @@ if [ -e "$NIXACTIONS_ARTIFACTS_DIR/release-binary" ]; then
     fi
   done
 else
-  echo "  ✗ Artifact not found: release-binary"
+  _log_workflow artifact "release-binary" event "✗" "Artifact not found"
   return 1
 fi
 
-echo "  ✓ Restored: release-binary"
+_log_job "test" artifact "release-binary" event "✓" "Restored"
 
 if [ -z "${CONTAINER_ID_OCI_nixos_nix_mount:-}" ]; then
-  echo "  ✗ Container not initialized"
+  _log_workflow event "✗" "Container not initialized"
   return 1
 fi
 
@@ -327,26 +521,25 @@ if [ -e "$NIXACTIONS_ARTIFACTS_DIR/build-artifacts" ]; then
     fi
   done
 else
-  echo "  ✗ Artifact not found: build-artifacts"
+  _log_workflow artifact "build-artifacts" event "✗" "Artifact not found"
   return 1
 fi
 
-echo "  ✓ Restored: build-artifacts"
+_log_job "test" artifact "build-artifacts" event "✓" "Restored"
 
-echo ""
 
   
   # Execute job via executor
   # Ensure workspace is initialized
 if [ -z "${CONTAINER_ID_OCI_nixos_nix_mount:-}" ]; then
-  echo "Error: OCI workspace not initialized for nixos/nix (mode: mount)"
+  _log_workflow executor "oci-nixos_nix-mount" event "✗" "Workspace not initialized"
   exit 1
 fi
 
 /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker exec \
    \
   "$CONTAINER_ID_OCI_nixos_nix_mount" \
-  bash -c 'set -euo pipefail
+  bash -c 'set -uo pipefail
 
 # Create job directory
 JOB_DIR="/workspace/jobs/test"
@@ -358,27 +551,103 @@ JOB_ENV="$JOB_DIR/.job-env"
 touch "$JOB_ENV"
 export JOB_ENV
 
-echo "╔════════════════════════════════════════╗"
-echo "║ JOB: test"
-echo "║ EXECUTOR: oci-nixos_nix-mount"
-echo "║ WORKDIR: $JOB_DIR"
-echo "╚════════════════════════════════════════╝"
+_log_job "test" executor "oci-nixos_nix-mount" workdir "$JOB_DIR" event "▶" "Job starting"
+
 
 # Set job-level environment
 
 
+# Track action failures
+ACTION_FAILED=false
+
 # Execute action derivations as separate processes
 # === test ===
-echo "→ test"
 
-# Source JOB_ENV and export all variables before running action
-set -a
-[ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
-set +a
+# Check action condition
+_should_run=true
+ACTION_CONDITION="success()"
+case "$ACTION_CONDITION" in
+  '\''always()'\'')
+    # Always run
+    ;;
+  '\''success()'\'')
+    # Run only if no previous action failed
+    if [ "$ACTION_FAILED" = "true" ]; then
+      _should_run=false
+    fi
+    ;;
+  '\''failure()'\'')
+    # Run only if a previous action failed
+    if [ "$ACTION_FAILED" = "false" ]; then
+      _should_run=false
+    fi
+    ;;
+  '\''cancelled()'\'')
+    # Would need workflow-level cancellation support
+    _should_run=false
+    ;;
+  *)
+    # Bash script condition - evaluate it
+    if ! ($ACTION_CONDITION); then
+      _should_run=false
+    fi
+    ;;
+esac
 
-# Execute action as separate process
-/nix/store/dnp66xl0fk1fj26z41glgf31kk44vr48-test/bin/test
+if [ "$_should_run" = "false" ]; then
+  echo "⊘ Skipping test (condition: $ACTION_CONDITION)"
+else
+  _log job "test" action "test" event "→" "Starting"
+  
+  # Record start time (use fallback if nanoseconds not available)
+  _action_start_ns=$(date +%s%N 2>/dev/null || date +%s)
+  
+  # Source JOB_ENV and export all variables before running action
+  set -a
+  [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
+  set +a
+  
+  # Execute action as separate process with output wrapping
+  set +e
+  if [ "$NIXACTIONS_LOG_FORMAT" = "simple" ]; then
+    # Simple format - pass through unchanged
+    /nix/store/dnp66xl0fk1fj26z41glgf31kk44vr48-test/bin/test
+    _action_exit_code=$?
+  else
+    # Structured/JSON format - wrap each line
+    /nix/store/dnp66xl0fk1fj26z41glgf31kk44vr48-test/bin/test 2>&1 | _log_line "test" "test"
+    _action_exit_code=${PIPESTATUS[0]}
+  fi
+  set -e
+  
+  # Calculate duration
+  _action_end_ns=$(date +%s%N 2>/dev/null || date +%s)
+  if echo "$_action_start_ns" | grep -q "N"; then
+    # Fallback: seconds only
+    _action_duration_s=$((_action_end_ns - _action_start_ns))
+    _action_duration_ms=$((_action_duration_s * 1000))
+  else
+    # Nanoseconds available
+    _action_duration_ms=$(( (_action_end_ns - _action_start_ns) / 1000000 ))
+    _action_duration_s=$(echo "scale=3; $_action_duration_ms / 1000" | bc 2>/dev/null || echo $((_action_duration_ms / 1000)))
+  fi
+  
+  # Log result and track failure for subsequent actions
+  if [ $_action_exit_code -ne 0 ]; then
+    ACTION_FAILED=true
+    _log job "test" action "test" duration "${_action_duration_s}s" exit_code $_action_exit_code event "✗" "Failed"
+    # Don'\''t exit immediately - let conditions handle flow
+  else
+    _log job "test" action "test" duration "${_action_duration_s}s" exit_code $_action_exit_code event "✓" "Completed"
+  fi
+fi
 
+
+# Fail job if any action failed
+if [ "$ACTION_FAILED" = "true" ]; then
+  _log_job "test" event "✗" "Job failed due to action failures"
+  exit 1
+fi
 '
 
   
@@ -388,64 +657,38 @@ set +a
 
 # Main execution
 main() {
-  echo "════════════════════════════════════════"
-  echo " Workflow: artifacts-paths-oci"
-  echo " Execution: GitHub Actions style (parallel)"
-  echo " Levels: 2"
-  echo "════════════════════════════════════════"
-  echo ""
+  _log_workflow levels 2 event "▶" "Workflow starting"
   
   # Execute level by level
-  echo "→ Level 0: build"
+  _log_workflow level 0 jobs "build" event "→" "Starting level"
 
 # Build job specs (name|condition|continueOnError)
 run_parallel \
    "build|success()|" || {
-    echo "⊘ Level 0 failed"
+    _log_workflow level 0 event "✗" "Level failed"
     exit 1
   }
 
-echo ""
 
-
-echo "→ Level 1: test"
+_log_workflow level 1 jobs "test" event "→" "Starting level"
 
 # Build job specs (name|condition|continueOnError)
 run_parallel \
    "test|success()|" || {
-    echo "⊘ Level 1 failed"
+    _log_workflow level 1 event "✗" "Level failed"
     exit 1
   }
 
-echo ""
-
+  
+  
   
   # Final report
-  echo "════════════════════════════════════════"
   if [ ${#FAILED_JOBS[@]} -gt 0 ]; then
-    echo "✗ Workflow failed"
-    echo ""
-    echo "Failed jobs:"
-    printf '  - %s\n' "${FAILED_JOBS[@]}"
-    echo ""
-    echo "Job statuses:"
-    for job in build test; do
-      echo "  $job: ${JOB_STATUS[$job]:-unknown}"
-    done
+    _log_workflow failed_jobs "${FAILED_JOBS[*]}" event "✗" "Workflow failed"
     exit 1
   else
-    echo "✓ Workflow completed successfully"
-    echo ""
-    echo "All jobs succeeded:"
-    for job in build test; do
-      if [ "${JOB_STATUS[$job]:-unknown}" = "success" ]; then
-        echo "  ✓ $job"
-      elif [ "${JOB_STATUS[$job]:-unknown}" = "skipped" ]; then
-        echo "  ⊘ $job (skipped)"
-      fi
-    done
+    _log_workflow event "✓" "Workflow completed successfully"
   fi
-  echo "════════════════════════════════════════"
 }
 
 main "$@"
