@@ -4,11 +4,11 @@ set -euo pipefail
 # NixActions workflow - executors own workspace (v2)
 
 # Generate workflow ID
-WORKFLOW_ID="env-sharing-demo-$(date +%s)-$$"
+WORKFLOW_ID="test-env-propagation-$(date +%s)-$$"
 export WORKFLOW_ID
 
 # Export workflow name for logging
-export WORKFLOW_NAME="env-sharing-demo"
+export WORKFLOW_NAME="test-env-propagation"
 
 # Export log format (default: structured)
 export NIXACTIONS_LOG_FORMAT=${NIXACTIONS_LOG_FORMAT:-structured}
@@ -243,527 +243,6 @@ run_parallel() {
 }
 
 # Job functions
-job_build() {
-  # Setup workspace for this job
-  # Lazy init - only create if not exists
-if [ -z "${WORKSPACE_DIR_LOCAL:-}" ]; then
-  WORKSPACE_DIR_LOCAL="/tmp/nixactions/$WORKFLOW_ID"
-  mkdir -p "$WORKSPACE_DIR_LOCAL"
-  export WORKSPACE_DIR_LOCAL
-  _log_workflow executor "local" workspace "$WORKSPACE_DIR_LOCAL" event "→" "Workspace created"
-fi
-
-  
-  
-  
-  # Execute job via executor
-  # Create isolated directory for this job
-JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/build"
-mkdir -p "$JOB_DIR"
-cd "$JOB_DIR"
-
-# Create job-specific env file INSIDE workspace
-JOB_ENV="$JOB_DIR/.job-env"
-touch "$JOB_ENV"
-export JOB_ENV
-
-_log_job "build" executor "local" workdir "$JOB_DIR" event "▶" "Job starting"
-
-
-# Set job-level environment
-
-
-# Track action failures
-ACTION_FAILED=false
-
-# Execute action derivations as separate processes
-# === generate-version ===
-
-# Check action condition
-_should_run=true
-ACTION_CONDITION="success()"
-case "$ACTION_CONDITION" in
-  'always()')
-    # Always run
-    ;;
-  'success()')
-    # Run only if no previous action failed
-    if [ "$ACTION_FAILED" = "true" ]; then
-      _should_run=false
-    fi
-    ;;
-  'failure()')
-    # Run only if a previous action failed
-    if [ "$ACTION_FAILED" = "false" ]; then
-      _should_run=false
-    fi
-    ;;
-  'cancelled()')
-    # Would need workflow-level cancellation support
-    _should_run=false
-    ;;
-  *)
-    # Bash script condition - evaluate it
-    if ! ($ACTION_CONDITION); then
-      _should_run=false
-    fi
-    ;;
-esac
-
-if [ "$_should_run" = "false" ]; then
-  echo "⊘ Skipping generate-version (condition: $ACTION_CONDITION)"
-else
-  _log job "build" action "generate-version" event "→" "Starting"
-  
-  # Record start time
-  _action_start_ns=$(date +%s%N 2>/dev/null || echo "0")
-  
-  # Source JOB_ENV and export all variables before running action
-  set -a
-  [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
-  set +a
-  
-  # Execute action as separate process with output wrapping
-  set +e
-  if [ "$NIXACTIONS_LOG_FORMAT" = "simple" ]; then
-    # Simple format - pass through unchanged
-    /nix/store/vbygxvra2ivhrnw3pklcvagarvaavsvf-generate-version/bin/generate-version
-    _action_exit_code=$?
-  else
-    # Structured/JSON format - wrap each line
-    /nix/store/vbygxvra2ivhrnw3pklcvagarvaavsvf-generate-version/bin/generate-version 2>&1 | _log_line "build" "generate-version"
-    _action_exit_code=${PIPESTATUS[0]}
-  fi
-  set -e
-  
-  # Calculate duration
-  if [ "$_action_start_ns" != "0" ]; then
-    _action_end_ns=$(date +%s%N 2>/dev/null || echo "0")
-    _action_duration_ms=$(( (_action_end_ns - _action_start_ns) / 1000000 ))
-    _action_duration_s=$(echo "scale=3; $_action_duration_ms / 1000" | /nix/store/dyh62vfsijvlgqhkw2h3br29ib6fgwsb-bc-1.08.2/bin/bc 2>/dev/null || echo "0")
-  else
-    _action_duration_s="0"
-  fi
-  
-  # Log result and track failure for subsequent actions
-  if [ $_action_exit_code -ne 0 ]; then
-    ACTION_FAILED=true
-    _log job "build" action "generate-version" duration "${_action_duration_s}s" exit_code $_action_exit_code event "✗" "Failed"
-    # Don't exit immediately - let conditions handle flow
-  else
-    _log job "build" action "generate-version" duration "${_action_duration_s}s" exit_code $_action_exit_code event "✓" "Completed"
-  fi
-fi
-
-
-# === build-app ===
-
-# Check action condition
-_should_run=true
-ACTION_CONDITION="success()"
-case "$ACTION_CONDITION" in
-  'always()')
-    # Always run
-    ;;
-  'success()')
-    # Run only if no previous action failed
-    if [ "$ACTION_FAILED" = "true" ]; then
-      _should_run=false
-    fi
-    ;;
-  'failure()')
-    # Run only if a previous action failed
-    if [ "$ACTION_FAILED" = "false" ]; then
-      _should_run=false
-    fi
-    ;;
-  'cancelled()')
-    # Would need workflow-level cancellation support
-    _should_run=false
-    ;;
-  *)
-    # Bash script condition - evaluate it
-    if ! ($ACTION_CONDITION); then
-      _should_run=false
-    fi
-    ;;
-esac
-
-if [ "$_should_run" = "false" ]; then
-  echo "⊘ Skipping build-app (condition: $ACTION_CONDITION)"
-else
-  _log job "build" action "build-app" event "→" "Starting"
-  
-  # Record start time
-  _action_start_ns=$(date +%s%N 2>/dev/null || echo "0")
-  
-  # Source JOB_ENV and export all variables before running action
-  set -a
-  [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
-  set +a
-  
-  # Execute action as separate process with output wrapping
-  set +e
-  if [ "$NIXACTIONS_LOG_FORMAT" = "simple" ]; then
-    # Simple format - pass through unchanged
-    /nix/store/9204zsym02mx6qcid6pmrw3an037j12h-build-app/bin/build-app
-    _action_exit_code=$?
-  else
-    # Structured/JSON format - wrap each line
-    /nix/store/9204zsym02mx6qcid6pmrw3an037j12h-build-app/bin/build-app 2>&1 | _log_line "build" "build-app"
-    _action_exit_code=${PIPESTATUS[0]}
-  fi
-  set -e
-  
-  # Calculate duration
-  if [ "$_action_start_ns" != "0" ]; then
-    _action_end_ns=$(date +%s%N 2>/dev/null || echo "0")
-    _action_duration_ms=$(( (_action_end_ns - _action_start_ns) / 1000000 ))
-    _action_duration_s=$(echo "scale=3; $_action_duration_ms / 1000" | /nix/store/dyh62vfsijvlgqhkw2h3br29ib6fgwsb-bc-1.08.2/bin/bc 2>/dev/null || echo "0")
-  else
-    _action_duration_s="0"
-  fi
-  
-  # Log result and track failure for subsequent actions
-  if [ $_action_exit_code -ne 0 ]; then
-    ACTION_FAILED=true
-    _log job "build" action "build-app" duration "${_action_duration_s}s" exit_code $_action_exit_code event "✗" "Failed"
-    # Don't exit immediately - let conditions handle flow
-  else
-    _log job "build" action "build-app" duration "${_action_duration_s}s" exit_code $_action_exit_code event "✓" "Completed"
-  fi
-fi
-
-
-# === verify-build ===
-
-# Check action condition
-_should_run=true
-ACTION_CONDITION="success()"
-case "$ACTION_CONDITION" in
-  'always()')
-    # Always run
-    ;;
-  'success()')
-    # Run only if no previous action failed
-    if [ "$ACTION_FAILED" = "true" ]; then
-      _should_run=false
-    fi
-    ;;
-  'failure()')
-    # Run only if a previous action failed
-    if [ "$ACTION_FAILED" = "false" ]; then
-      _should_run=false
-    fi
-    ;;
-  'cancelled()')
-    # Would need workflow-level cancellation support
-    _should_run=false
-    ;;
-  *)
-    # Bash script condition - evaluate it
-    if ! ($ACTION_CONDITION); then
-      _should_run=false
-    fi
-    ;;
-esac
-
-if [ "$_should_run" = "false" ]; then
-  echo "⊘ Skipping verify-build (condition: $ACTION_CONDITION)"
-else
-  _log job "build" action "verify-build" event "→" "Starting"
-  
-  # Record start time
-  _action_start_ns=$(date +%s%N 2>/dev/null || echo "0")
-  
-  # Source JOB_ENV and export all variables before running action
-  set -a
-  [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
-  set +a
-  
-  # Execute action as separate process with output wrapping
-  set +e
-  if [ "$NIXACTIONS_LOG_FORMAT" = "simple" ]; then
-    # Simple format - pass through unchanged
-    /nix/store/bqkkiblgyd3giajal0sr8xkbgbx6z7h2-verify-build/bin/verify-build
-    _action_exit_code=$?
-  else
-    # Structured/JSON format - wrap each line
-    /nix/store/bqkkiblgyd3giajal0sr8xkbgbx6z7h2-verify-build/bin/verify-build 2>&1 | _log_line "build" "verify-build"
-    _action_exit_code=${PIPESTATUS[0]}
-  fi
-  set -e
-  
-  # Calculate duration
-  if [ "$_action_start_ns" != "0" ]; then
-    _action_end_ns=$(date +%s%N 2>/dev/null || echo "0")
-    _action_duration_ms=$(( (_action_end_ns - _action_start_ns) / 1000000 ))
-    _action_duration_s=$(echo "scale=3; $_action_duration_ms / 1000" | /nix/store/dyh62vfsijvlgqhkw2h3br29ib6fgwsb-bc-1.08.2/bin/bc 2>/dev/null || echo "0")
-  else
-    _action_duration_s="0"
-  fi
-  
-  # Log result and track failure for subsequent actions
-  if [ $_action_exit_code -ne 0 ]; then
-    ACTION_FAILED=true
-    _log job "build" action "verify-build" duration "${_action_duration_s}s" exit_code $_action_exit_code event "✗" "Failed"
-    # Don't exit immediately - let conditions handle flow
-  else
-    _log job "build" action "verify-build" duration "${_action_duration_s}s" exit_code $_action_exit_code event "✓" "Completed"
-  fi
-fi
-
-
-# Fail job if any action failed
-if [ "$ACTION_FAILED" = "true" ]; then
-  _log_job "build" event "✗" "Job failed due to action failures"
-  exit 1
-fi
-
-  
-  # Save artifacts on HOST after job completes
-_log_job "build" event "→" "Saving artifacts"
-JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/build"
-if [ -e "$JOB_DIR/dist/" ]; then
-  rm -rf "$NIXACTIONS_ARTIFACTS_DIR/build-info"
-  mkdir -p "$NIXACTIONS_ARTIFACTS_DIR/build-info"
-  
-  # Save preserving original path structure
-  PARENT_DIR=$(dirname "dist/")
-  if [ "$PARENT_DIR" != "." ]; then
-    mkdir -p "$NIXACTIONS_ARTIFACTS_DIR/build-info/$PARENT_DIR"
-  fi
-  
-  cp -r "$JOB_DIR/dist/" "$NIXACTIONS_ARTIFACTS_DIR/build-info/dist/"
-else
-  _log_workflow artifact "build-info" path "dist/" event "✗" "Path not found"
-  return 1
-fi
-
-ARTIFACT_SIZE=$(du -sh "$NIXACTIONS_ARTIFACTS_DIR/build-info" 2>/dev/null | cut -f1 || echo "unknown")
-echo "  ✓ Saved: build-info → dist/ (${ARTIFACT_SIZE})"
-
-
-}
-
-
-job_calculate() {
-  # Setup workspace for this job
-  # Lazy init - only create if not exists
-if [ -z "${WORKSPACE_DIR_LOCAL:-}" ]; then
-  WORKSPACE_DIR_LOCAL="/tmp/nixactions/$WORKFLOW_ID"
-  mkdir -p "$WORKSPACE_DIR_LOCAL"
-  export WORKSPACE_DIR_LOCAL
-  _log_workflow executor "local" workspace "$WORKSPACE_DIR_LOCAL" event "→" "Workspace created"
-fi
-
-  
-  # Restore artifacts on HOST before executing job
-_log_job "calculate" artifacts "build-info" event "→" "Restoring artifacts"
-JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/calculate"
-if [ -e "$NIXACTIONS_ARTIFACTS_DIR/build-info" ]; then
-  # Restore to job directory (will be created by executeJob)
-  mkdir -p "$JOB_DIR"
-  cp -r "$NIXACTIONS_ARTIFACTS_DIR/build-info"/* "$JOB_DIR/" 2>/dev/null || true
-else
-  _log_workflow artifact "build-info" event "✗" "Artifact not found"
-  return 1
-fi
-
-_log_job "calculate" artifact "build-info" event "✓" "Restored"
-
-
-  
-  # Execute job via executor
-  # Create isolated directory for this job
-JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/calculate"
-mkdir -p "$JOB_DIR"
-cd "$JOB_DIR"
-
-# Create job-specific env file INSIDE workspace
-JOB_ENV="$JOB_DIR/.job-env"
-touch "$JOB_ENV"
-export JOB_ENV
-
-_log_job "calculate" executor "local" workdir "$JOB_DIR" event "▶" "Job starting"
-
-
-# Set job-level environment
-
-
-# Track action failures
-ACTION_FAILED=false
-
-# Execute action derivations as separate processes
-# === multi-step-calculation ===
-
-# Check action condition
-_should_run=true
-ACTION_CONDITION="success()"
-case "$ACTION_CONDITION" in
-  'always()')
-    # Always run
-    ;;
-  'success()')
-    # Run only if no previous action failed
-    if [ "$ACTION_FAILED" = "true" ]; then
-      _should_run=false
-    fi
-    ;;
-  'failure()')
-    # Run only if a previous action failed
-    if [ "$ACTION_FAILED" = "false" ]; then
-      _should_run=false
-    fi
-    ;;
-  'cancelled()')
-    # Would need workflow-level cancellation support
-    _should_run=false
-    ;;
-  *)
-    # Bash script condition - evaluate it
-    if ! ($ACTION_CONDITION); then
-      _should_run=false
-    fi
-    ;;
-esac
-
-if [ "$_should_run" = "false" ]; then
-  echo "⊘ Skipping multi-step-calculation (condition: $ACTION_CONDITION)"
-else
-  _log job "calculate" action "multi-step-calculation" event "→" "Starting"
-  
-  # Record start time
-  _action_start_ns=$(date +%s%N 2>/dev/null || echo "0")
-  
-  # Source JOB_ENV and export all variables before running action
-  set -a
-  [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
-  set +a
-  
-  # Execute action as separate process with output wrapping
-  set +e
-  if [ "$NIXACTIONS_LOG_FORMAT" = "simple" ]; then
-    # Simple format - pass through unchanged
-    /nix/store/gm7kib0nz7vlw2zdjkrffbw4r695rgjs-multi-step-calculation/bin/multi-step-calculation
-    _action_exit_code=$?
-  else
-    # Structured/JSON format - wrap each line
-    /nix/store/gm7kib0nz7vlw2zdjkrffbw4r695rgjs-multi-step-calculation/bin/multi-step-calculation 2>&1 | _log_line "calculate" "multi-step-calculation"
-    _action_exit_code=${PIPESTATUS[0]}
-  fi
-  set -e
-  
-  # Calculate duration
-  if [ "$_action_start_ns" != "0" ]; then
-    _action_end_ns=$(date +%s%N 2>/dev/null || echo "0")
-    _action_duration_ms=$(( (_action_end_ns - _action_start_ns) / 1000000 ))
-    _action_duration_s=$(echo "scale=3; $_action_duration_ms / 1000" | /nix/store/dyh62vfsijvlgqhkw2h3br29ib6fgwsb-bc-1.08.2/bin/bc 2>/dev/null || echo "0")
-  else
-    _action_duration_s="0"
-  fi
-  
-  # Log result and track failure for subsequent actions
-  if [ $_action_exit_code -ne 0 ]; then
-    ACTION_FAILED=true
-    _log job "calculate" action "multi-step-calculation" duration "${_action_duration_s}s" exit_code $_action_exit_code event "✗" "Failed"
-    # Don't exit immediately - let conditions handle flow
-  else
-    _log job "calculate" action "multi-step-calculation" duration "${_action_duration_s}s" exit_code $_action_exit_code event "✓" "Completed"
-  fi
-fi
-
-
-# === use-calculations ===
-
-# Check action condition
-_should_run=true
-ACTION_CONDITION="success()"
-case "$ACTION_CONDITION" in
-  'always()')
-    # Always run
-    ;;
-  'success()')
-    # Run only if no previous action failed
-    if [ "$ACTION_FAILED" = "true" ]; then
-      _should_run=false
-    fi
-    ;;
-  'failure()')
-    # Run only if a previous action failed
-    if [ "$ACTION_FAILED" = "false" ]; then
-      _should_run=false
-    fi
-    ;;
-  'cancelled()')
-    # Would need workflow-level cancellation support
-    _should_run=false
-    ;;
-  *)
-    # Bash script condition - evaluate it
-    if ! ($ACTION_CONDITION); then
-      _should_run=false
-    fi
-    ;;
-esac
-
-if [ "$_should_run" = "false" ]; then
-  echo "⊘ Skipping use-calculations (condition: $ACTION_CONDITION)"
-else
-  _log job "calculate" action "use-calculations" event "→" "Starting"
-  
-  # Record start time
-  _action_start_ns=$(date +%s%N 2>/dev/null || echo "0")
-  
-  # Source JOB_ENV and export all variables before running action
-  set -a
-  [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
-  set +a
-  
-  # Execute action as separate process with output wrapping
-  set +e
-  if [ "$NIXACTIONS_LOG_FORMAT" = "simple" ]; then
-    # Simple format - pass through unchanged
-    /nix/store/59d7gvas6synqwm7v0nrhd6lg6lh51iz-use-calculations/bin/use-calculations
-    _action_exit_code=$?
-  else
-    # Structured/JSON format - wrap each line
-    /nix/store/59d7gvas6synqwm7v0nrhd6lg6lh51iz-use-calculations/bin/use-calculations 2>&1 | _log_line "calculate" "use-calculations"
-    _action_exit_code=${PIPESTATUS[0]}
-  fi
-  set -e
-  
-  # Calculate duration
-  if [ "$_action_start_ns" != "0" ]; then
-    _action_end_ns=$(date +%s%N 2>/dev/null || echo "0")
-    _action_duration_ms=$(( (_action_end_ns - _action_start_ns) / 1000000 ))
-    _action_duration_s=$(echo "scale=3; $_action_duration_ms / 1000" | /nix/store/dyh62vfsijvlgqhkw2h3br29ib6fgwsb-bc-1.08.2/bin/bc 2>/dev/null || echo "0")
-  else
-    _action_duration_s="0"
-  fi
-  
-  # Log result and track failure for subsequent actions
-  if [ $_action_exit_code -ne 0 ]; then
-    ACTION_FAILED=true
-    _log job "calculate" action "use-calculations" duration "${_action_duration_s}s" exit_code $_action_exit_code event "✗" "Failed"
-    # Don't exit immediately - let conditions handle flow
-  else
-    _log job "calculate" action "use-calculations" duration "${_action_duration_s}s" exit_code $_action_exit_code event "✓" "Completed"
-  fi
-fi
-
-
-# Fail job if any action failed
-if [ "$ACTION_FAILED" = "true" ]; then
-  _log_job "calculate" event "✗" "Job failed due to action failures"
-  exit 1
-fi
-
-  
-  
-}
-
-
 job_summary() {
   # Setup workspace for this job
   # Lazy init - only create if not exists
@@ -848,11 +327,11 @@ else
   set +e
   if [ "$NIXACTIONS_LOG_FORMAT" = "simple" ]; then
     # Simple format - pass through unchanged
-    /nix/store/gd686fl8iipxm7jsbj1zh46jvxihywng-summary/bin/summary
+    /nix/store/a296n1ffz7q6vfw8i8rpjkhcr9damci8-summary/bin/summary
     _action_exit_code=$?
   else
     # Structured/JSON format - wrap each line
-    /nix/store/gd686fl8iipxm7jsbj1zh46jvxihywng-summary/bin/summary 2>&1 | _log_line "summary" "summary"
+    /nix/store/a296n1ffz7q6vfw8i8rpjkhcr9damci8-summary/bin/summary 2>&1 | _log_line "summary" "summary"
     _action_exit_code=${PIPESTATUS[0]}
   fi
   set -e
@@ -888,7 +367,7 @@ fi
 }
 
 
-job_test-advanced() {
+job_test-export-vars() {
   # Setup workspace for this job
   # Lazy init - only create if not exists
 if [ -z "${WORKSPACE_DIR_LOCAL:-}" ]; then
@@ -899,25 +378,11 @@ if [ -z "${WORKSPACE_DIR_LOCAL:-}" ]; then
 fi
 
   
-  # Restore artifacts on HOST before executing job
-_log_job "test-advanced" artifacts "build-info" event "→" "Restoring artifacts"
-JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/test-advanced"
-if [ -e "$NIXACTIONS_ARTIFACTS_DIR/build-info" ]; then
-  # Restore to job directory (will be created by executeJob)
-  mkdir -p "$JOB_DIR"
-  cp -r "$NIXACTIONS_ARTIFACTS_DIR/build-info"/* "$JOB_DIR/" 2>/dev/null || true
-else
-  _log_workflow artifact "build-info" event "✗" "Artifact not found"
-  return 1
-fi
-
-_log_job "test-advanced" artifact "build-info" event "✓" "Restored"
-
-
+  
   
   # Execute job via executor
   # Create isolated directory for this job
-JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/test-advanced"
+JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/test-export-vars"
 mkdir -p "$JOB_DIR"
 cd "$JOB_DIR"
 
@@ -926,7 +391,7 @@ JOB_ENV="$JOB_DIR/.job-env"
 touch "$JOB_ENV"
 export JOB_ENV
 
-_log_job "test-advanced" executor "local" workdir "$JOB_DIR" event "▶" "Job starting"
+_log_job "test-export-vars" executor "local" workdir "$JOB_DIR" event "▶" "Job starting"
 
 
 # Set job-level environment
@@ -936,7 +401,7 @@ _log_job "test-advanced" executor "local" workdir "$JOB_DIR" event "▶" "Job st
 ACTION_FAILED=false
 
 # Execute action derivations as separate processes
-# === parse-build-info ===
+# === without-export ===
 
 # Check action condition
 _should_run=true
@@ -970,9 +435,9 @@ case "$ACTION_CONDITION" in
 esac
 
 if [ "$_should_run" = "false" ]; then
-  echo "⊘ Skipping parse-build-info (condition: $ACTION_CONDITION)"
+  echo "⊘ Skipping without-export (condition: $ACTION_CONDITION)"
 else
-  _log job "test-advanced" action "parse-build-info" event "→" "Starting"
+  _log job "test-export-vars" action "without-export" event "→" "Starting"
   
   # Record start time
   _action_start_ns=$(date +%s%N 2>/dev/null || echo "0")
@@ -986,11 +451,11 @@ else
   set +e
   if [ "$NIXACTIONS_LOG_FORMAT" = "simple" ]; then
     # Simple format - pass through unchanged
-    /nix/store/3lr6kic0yxf03c57zimzdz88qx101bsp-parse-build-info/bin/parse-build-info
+    /nix/store/q867yz66gihkra0i5g7428yskrf2z7yk-without-export/bin/without-export
     _action_exit_code=$?
   else
     # Structured/JSON format - wrap each line
-    /nix/store/3lr6kic0yxf03c57zimzdz88qx101bsp-parse-build-info/bin/parse-build-info 2>&1 | _log_line "test-advanced" "parse-build-info"
+    /nix/store/q867yz66gihkra0i5g7428yskrf2z7yk-without-export/bin/without-export 2>&1 | _log_line "test-export-vars" "without-export"
     _action_exit_code=${PIPESTATUS[0]}
   fi
   set -e
@@ -1007,15 +472,15 @@ else
   # Log result and track failure for subsequent actions
   if [ $_action_exit_code -ne 0 ]; then
     ACTION_FAILED=true
-    _log job "test-advanced" action "parse-build-info" duration "${_action_duration_s}s" exit_code $_action_exit_code event "✗" "Failed"
+    _log job "test-export-vars" action "without-export" duration "${_action_duration_s}s" exit_code $_action_exit_code event "✗" "Failed"
     # Don't exit immediately - let conditions handle flow
   else
-    _log job "test-advanced" action "parse-build-info" duration "${_action_duration_s}s" exit_code $_action_exit_code event "✓" "Completed"
+    _log job "test-export-vars" action "without-export" duration "${_action_duration_s}s" exit_code $_action_exit_code event "✓" "Completed"
   fi
 fi
 
 
-# === use-parsed-version ===
+# === with-export ===
 
 # Check action condition
 _should_run=true
@@ -1049,9 +514,9 @@ case "$ACTION_CONDITION" in
 esac
 
 if [ "$_should_run" = "false" ]; then
-  echo "⊘ Skipping use-parsed-version (condition: $ACTION_CONDITION)"
+  echo "⊘ Skipping with-export (condition: $ACTION_CONDITION)"
 else
-  _log job "test-advanced" action "use-parsed-version" event "→" "Starting"
+  _log job "test-export-vars" action "with-export" event "→" "Starting"
   
   # Record start time
   _action_start_ns=$(date +%s%N 2>/dev/null || echo "0")
@@ -1065,11 +530,11 @@ else
   set +e
   if [ "$NIXACTIONS_LOG_FORMAT" = "simple" ]; then
     # Simple format - pass through unchanged
-    /nix/store/9k9kakvp0g16zpxv6i8c0kil97gzd1w6-use-parsed-version/bin/use-parsed-version
+    /nix/store/bjr17v5jvxiil7ynwljimzy0q1s80kjs-with-export/bin/with-export
     _action_exit_code=$?
   else
     # Structured/JSON format - wrap each line
-    /nix/store/9k9kakvp0g16zpxv6i8c0kil97gzd1w6-use-parsed-version/bin/use-parsed-version 2>&1 | _log_line "test-advanced" "use-parsed-version"
+    /nix/store/bjr17v5jvxiil7ynwljimzy0q1s80kjs-with-export/bin/with-export 2>&1 | _log_line "test-export-vars" "with-export"
     _action_exit_code=${PIPESTATUS[0]}
   fi
   set -e
@@ -1086,17 +551,423 @@ else
   # Log result and track failure for subsequent actions
   if [ $_action_exit_code -ne 0 ]; then
     ACTION_FAILED=true
-    _log job "test-advanced" action "use-parsed-version" duration "${_action_duration_s}s" exit_code $_action_exit_code event "✗" "Failed"
+    _log job "test-export-vars" action "with-export" duration "${_action_duration_s}s" exit_code $_action_exit_code event "✗" "Failed"
     # Don't exit immediately - let conditions handle flow
   else
-    _log job "test-advanced" action "use-parsed-version" duration "${_action_duration_s}s" exit_code $_action_exit_code event "✓" "Completed"
+    _log job "test-export-vars" action "with-export" duration "${_action_duration_s}s" exit_code $_action_exit_code event "✓" "Completed"
   fi
 fi
 
 
 # Fail job if any action failed
 if [ "$ACTION_FAILED" = "true" ]; then
-  _log_job "test-advanced" event "✗" "Job failed due to action failures"
+  _log_job "test-export-vars" event "✗" "Job failed due to action failures"
+  exit 1
+fi
+
+  
+  
+}
+
+
+job_test-local-vars() {
+  # Setup workspace for this job
+  # Lazy init - only create if not exists
+if [ -z "${WORKSPACE_DIR_LOCAL:-}" ]; then
+  WORKSPACE_DIR_LOCAL="/tmp/nixactions/$WORKFLOW_ID"
+  mkdir -p "$WORKSPACE_DIR_LOCAL"
+  export WORKSPACE_DIR_LOCAL
+  _log_workflow executor "local" workspace "$WORKSPACE_DIR_LOCAL" event "→" "Workspace created"
+fi
+
+  
+  
+  
+  # Execute job via executor
+  # Create isolated directory for this job
+JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/test-local-vars"
+mkdir -p "$JOB_DIR"
+cd "$JOB_DIR"
+
+# Create job-specific env file INSIDE workspace
+JOB_ENV="$JOB_DIR/.job-env"
+touch "$JOB_ENV"
+export JOB_ENV
+
+_log_job "test-local-vars" executor "local" workdir "$JOB_DIR" event "▶" "Job starting"
+
+
+# Set job-level environment
+
+
+# Track action failures
+ACTION_FAILED=false
+
+# Execute action derivations as separate processes
+# === set-local-var ===
+
+# Check action condition
+_should_run=true
+ACTION_CONDITION="success()"
+case "$ACTION_CONDITION" in
+  'always()')
+    # Always run
+    ;;
+  'success()')
+    # Run only if no previous action failed
+    if [ "$ACTION_FAILED" = "true" ]; then
+      _should_run=false
+    fi
+    ;;
+  'failure()')
+    # Run only if a previous action failed
+    if [ "$ACTION_FAILED" = "false" ]; then
+      _should_run=false
+    fi
+    ;;
+  'cancelled()')
+    # Would need workflow-level cancellation support
+    _should_run=false
+    ;;
+  *)
+    # Bash script condition - evaluate it
+    if ! ($ACTION_CONDITION); then
+      _should_run=false
+    fi
+    ;;
+esac
+
+if [ "$_should_run" = "false" ]; then
+  echo "⊘ Skipping set-local-var (condition: $ACTION_CONDITION)"
+else
+  _log job "test-local-vars" action "set-local-var" event "→" "Starting"
+  
+  # Record start time
+  _action_start_ns=$(date +%s%N 2>/dev/null || echo "0")
+  
+  # Source JOB_ENV and export all variables before running action
+  set -a
+  [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
+  set +a
+  
+  # Execute action as separate process with output wrapping
+  set +e
+  if [ "$NIXACTIONS_LOG_FORMAT" = "simple" ]; then
+    # Simple format - pass through unchanged
+    /nix/store/6gbmihjanx4lvyr2x381rlq52zy01fc3-set-local-var/bin/set-local-var
+    _action_exit_code=$?
+  else
+    # Structured/JSON format - wrap each line
+    /nix/store/6gbmihjanx4lvyr2x381rlq52zy01fc3-set-local-var/bin/set-local-var 2>&1 | _log_line "test-local-vars" "set-local-var"
+    _action_exit_code=${PIPESTATUS[0]}
+  fi
+  set -e
+  
+  # Calculate duration
+  if [ "$_action_start_ns" != "0" ]; then
+    _action_end_ns=$(date +%s%N 2>/dev/null || echo "0")
+    _action_duration_ms=$(( (_action_end_ns - _action_start_ns) / 1000000 ))
+    _action_duration_s=$(echo "scale=3; $_action_duration_ms / 1000" | /nix/store/dyh62vfsijvlgqhkw2h3br29ib6fgwsb-bc-1.08.2/bin/bc 2>/dev/null || echo "0")
+  else
+    _action_duration_s="0"
+  fi
+  
+  # Log result and track failure for subsequent actions
+  if [ $_action_exit_code -ne 0 ]; then
+    ACTION_FAILED=true
+    _log job "test-local-vars" action "set-local-var" duration "${_action_duration_s}s" exit_code $_action_exit_code event "✗" "Failed"
+    # Don't exit immediately - let conditions handle flow
+  else
+    _log job "test-local-vars" action "set-local-var" duration "${_action_duration_s}s" exit_code $_action_exit_code event "✓" "Completed"
+  fi
+fi
+
+
+# === try-use-local ===
+
+# Check action condition
+_should_run=true
+ACTION_CONDITION="success()"
+case "$ACTION_CONDITION" in
+  'always()')
+    # Always run
+    ;;
+  'success()')
+    # Run only if no previous action failed
+    if [ "$ACTION_FAILED" = "true" ]; then
+      _should_run=false
+    fi
+    ;;
+  'failure()')
+    # Run only if a previous action failed
+    if [ "$ACTION_FAILED" = "false" ]; then
+      _should_run=false
+    fi
+    ;;
+  'cancelled()')
+    # Would need workflow-level cancellation support
+    _should_run=false
+    ;;
+  *)
+    # Bash script condition - evaluate it
+    if ! ($ACTION_CONDITION); then
+      _should_run=false
+    fi
+    ;;
+esac
+
+if [ "$_should_run" = "false" ]; then
+  echo "⊘ Skipping try-use-local (condition: $ACTION_CONDITION)"
+else
+  _log job "test-local-vars" action "try-use-local" event "→" "Starting"
+  
+  # Record start time
+  _action_start_ns=$(date +%s%N 2>/dev/null || echo "0")
+  
+  # Source JOB_ENV and export all variables before running action
+  set -a
+  [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
+  set +a
+  
+  # Execute action as separate process with output wrapping
+  set +e
+  if [ "$NIXACTIONS_LOG_FORMAT" = "simple" ]; then
+    # Simple format - pass through unchanged
+    /nix/store/5rkdpb1sdkq2zsy5gnag7fypklpi0y7k-try-use-local/bin/try-use-local
+    _action_exit_code=$?
+  else
+    # Structured/JSON format - wrap each line
+    /nix/store/5rkdpb1sdkq2zsy5gnag7fypklpi0y7k-try-use-local/bin/try-use-local 2>&1 | _log_line "test-local-vars" "try-use-local"
+    _action_exit_code=${PIPESTATUS[0]}
+  fi
+  set -e
+  
+  # Calculate duration
+  if [ "$_action_start_ns" != "0" ]; then
+    _action_end_ns=$(date +%s%N 2>/dev/null || echo "0")
+    _action_duration_ms=$(( (_action_end_ns - _action_start_ns) / 1000000 ))
+    _action_duration_s=$(echo "scale=3; $_action_duration_ms / 1000" | /nix/store/dyh62vfsijvlgqhkw2h3br29ib6fgwsb-bc-1.08.2/bin/bc 2>/dev/null || echo "0")
+  else
+    _action_duration_s="0"
+  fi
+  
+  # Log result and track failure for subsequent actions
+  if [ $_action_exit_code -ne 0 ]; then
+    ACTION_FAILED=true
+    _log job "test-local-vars" action "try-use-local" duration "${_action_duration_s}s" exit_code $_action_exit_code event "✗" "Failed"
+    # Don't exit immediately - let conditions handle flow
+  else
+    _log job "test-local-vars" action "try-use-local" duration "${_action_duration_s}s" exit_code $_action_exit_code event "✓" "Completed"
+  fi
+fi
+
+
+# Fail job if any action failed
+if [ "$ACTION_FAILED" = "true" ]; then
+  _log_job "test-local-vars" event "✗" "Job failed due to action failures"
+  exit 1
+fi
+
+  
+  
+}
+
+
+job_test-regular-vars() {
+  # Setup workspace for this job
+  # Lazy init - only create if not exists
+if [ -z "${WORKSPACE_DIR_LOCAL:-}" ]; then
+  WORKSPACE_DIR_LOCAL="/tmp/nixactions/$WORKFLOW_ID"
+  mkdir -p "$WORKSPACE_DIR_LOCAL"
+  export WORKSPACE_DIR_LOCAL
+  _log_workflow executor "local" workspace "$WORKSPACE_DIR_LOCAL" event "→" "Workspace created"
+fi
+
+  
+  
+  
+  # Execute job via executor
+  # Create isolated directory for this job
+JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/test-regular-vars"
+mkdir -p "$JOB_DIR"
+cd "$JOB_DIR"
+
+# Create job-specific env file INSIDE workspace
+JOB_ENV="$JOB_DIR/.job-env"
+touch "$JOB_ENV"
+export JOB_ENV
+
+_log_job "test-regular-vars" executor "local" workdir "$JOB_DIR" event "▶" "Job starting"
+
+
+# Set job-level environment
+
+
+# Track action failures
+ACTION_FAILED=false
+
+# Execute action derivations as separate processes
+# === set-regular-var ===
+
+# Check action condition
+_should_run=true
+ACTION_CONDITION="success()"
+case "$ACTION_CONDITION" in
+  'always()')
+    # Always run
+    ;;
+  'success()')
+    # Run only if no previous action failed
+    if [ "$ACTION_FAILED" = "true" ]; then
+      _should_run=false
+    fi
+    ;;
+  'failure()')
+    # Run only if a previous action failed
+    if [ "$ACTION_FAILED" = "false" ]; then
+      _should_run=false
+    fi
+    ;;
+  'cancelled()')
+    # Would need workflow-level cancellation support
+    _should_run=false
+    ;;
+  *)
+    # Bash script condition - evaluate it
+    if ! ($ACTION_CONDITION); then
+      _should_run=false
+    fi
+    ;;
+esac
+
+if [ "$_should_run" = "false" ]; then
+  echo "⊘ Skipping set-regular-var (condition: $ACTION_CONDITION)"
+else
+  _log job "test-regular-vars" action "set-regular-var" event "→" "Starting"
+  
+  # Record start time
+  _action_start_ns=$(date +%s%N 2>/dev/null || echo "0")
+  
+  # Source JOB_ENV and export all variables before running action
+  set -a
+  [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
+  set +a
+  
+  # Execute action as separate process with output wrapping
+  set +e
+  if [ "$NIXACTIONS_LOG_FORMAT" = "simple" ]; then
+    # Simple format - pass through unchanged
+    /nix/store/c6wj4s3ps05m2sqx5n3j7p5v92r7h87s-set-regular-var/bin/set-regular-var
+    _action_exit_code=$?
+  else
+    # Structured/JSON format - wrap each line
+    /nix/store/c6wj4s3ps05m2sqx5n3j7p5v92r7h87s-set-regular-var/bin/set-regular-var 2>&1 | _log_line "test-regular-vars" "set-regular-var"
+    _action_exit_code=${PIPESTATUS[0]}
+  fi
+  set -e
+  
+  # Calculate duration
+  if [ "$_action_start_ns" != "0" ]; then
+    _action_end_ns=$(date +%s%N 2>/dev/null || echo "0")
+    _action_duration_ms=$(( (_action_end_ns - _action_start_ns) / 1000000 ))
+    _action_duration_s=$(echo "scale=3; $_action_duration_ms / 1000" | /nix/store/dyh62vfsijvlgqhkw2h3br29ib6fgwsb-bc-1.08.2/bin/bc 2>/dev/null || echo "0")
+  else
+    _action_duration_s="0"
+  fi
+  
+  # Log result and track failure for subsequent actions
+  if [ $_action_exit_code -ne 0 ]; then
+    ACTION_FAILED=true
+    _log job "test-regular-vars" action "set-regular-var" duration "${_action_duration_s}s" exit_code $_action_exit_code event "✗" "Failed"
+    # Don't exit immediately - let conditions handle flow
+  else
+    _log job "test-regular-vars" action "set-regular-var" duration "${_action_duration_s}s" exit_code $_action_exit_code event "✓" "Completed"
+  fi
+fi
+
+
+# === use-regular-var ===
+
+# Check action condition
+_should_run=true
+ACTION_CONDITION="success()"
+case "$ACTION_CONDITION" in
+  'always()')
+    # Always run
+    ;;
+  'success()')
+    # Run only if no previous action failed
+    if [ "$ACTION_FAILED" = "true" ]; then
+      _should_run=false
+    fi
+    ;;
+  'failure()')
+    # Run only if a previous action failed
+    if [ "$ACTION_FAILED" = "false" ]; then
+      _should_run=false
+    fi
+    ;;
+  'cancelled()')
+    # Would need workflow-level cancellation support
+    _should_run=false
+    ;;
+  *)
+    # Bash script condition - evaluate it
+    if ! ($ACTION_CONDITION); then
+      _should_run=false
+    fi
+    ;;
+esac
+
+if [ "$_should_run" = "false" ]; then
+  echo "⊘ Skipping use-regular-var (condition: $ACTION_CONDITION)"
+else
+  _log job "test-regular-vars" action "use-regular-var" event "→" "Starting"
+  
+  # Record start time
+  _action_start_ns=$(date +%s%N 2>/dev/null || echo "0")
+  
+  # Source JOB_ENV and export all variables before running action
+  set -a
+  [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
+  set +a
+  
+  # Execute action as separate process with output wrapping
+  set +e
+  if [ "$NIXACTIONS_LOG_FORMAT" = "simple" ]; then
+    # Simple format - pass through unchanged
+    /nix/store/vn7vpg4sqndyicbkkl7g3lg8r15ag59w-use-regular-var/bin/use-regular-var
+    _action_exit_code=$?
+  else
+    # Structured/JSON format - wrap each line
+    /nix/store/vn7vpg4sqndyicbkkl7g3lg8r15ag59w-use-regular-var/bin/use-regular-var 2>&1 | _log_line "test-regular-vars" "use-regular-var"
+    _action_exit_code=${PIPESTATUS[0]}
+  fi
+  set -e
+  
+  # Calculate duration
+  if [ "$_action_start_ns" != "0" ]; then
+    _action_end_ns=$(date +%s%N 2>/dev/null || echo "0")
+    _action_duration_ms=$(( (_action_end_ns - _action_start_ns) / 1000000 ))
+    _action_duration_s=$(echo "scale=3; $_action_duration_ms / 1000" | /nix/store/dyh62vfsijvlgqhkw2h3br29ib6fgwsb-bc-1.08.2/bin/bc 2>/dev/null || echo "0")
+  else
+    _action_duration_s="0"
+  fi
+  
+  # Log result and track failure for subsequent actions
+  if [ $_action_exit_code -ne 0 ]; then
+    ACTION_FAILED=true
+    _log job "test-regular-vars" action "use-regular-var" duration "${_action_duration_s}s" exit_code $_action_exit_code event "✗" "Failed"
+    # Don't exit immediately - let conditions handle flow
+  else
+    _log job "test-regular-vars" action "use-regular-var" duration "${_action_duration_s}s" exit_code $_action_exit_code event "✓" "Completed"
+  fi
+fi
+
+
+# Fail job if any action failed
+if [ "$ACTION_FAILED" = "true" ]; then
+  _log_job "test-regular-vars" event "✗" "Job failed due to action failures"
   exit 1
 fi
 
@@ -1107,36 +978,45 @@ fi
 
 # Main execution
 main() {
-  _log_workflow levels 3 event "▶" "Workflow starting"
+  _log_workflow levels 4 event "▶" "Workflow starting"
   
   # Execute level by level
-  _log_workflow level 0 jobs "build" event "→" "Starting level"
+  _log_workflow level 0 jobs "test-regular-vars" event "→" "Starting level"
 
 # Build job specs (name|condition|continueOnError)
 run_parallel \
-   "build|success()|" || {
+   "test-regular-vars|success()|" || {
     _log_workflow level 0 event "✗" "Level failed"
     exit 1
   }
 
 
-_log_workflow level 1 jobs "calculate, test-advanced" event "→" "Starting level"
+_log_workflow level 1 jobs "test-local-vars" event "→" "Starting level"
 
 # Build job specs (name|condition|continueOnError)
 run_parallel \
-   "calculate|success()|" \
-    "test-advanced|success()|" || {
+   "test-local-vars|success()|" || {
     _log_workflow level 1 event "✗" "Level failed"
     exit 1
   }
 
 
-_log_workflow level 2 jobs "summary" event "→" "Starting level"
+_log_workflow level 2 jobs "test-export-vars" event "→" "Starting level"
+
+# Build job specs (name|condition|continueOnError)
+run_parallel \
+   "test-export-vars|success()|" || {
+    _log_workflow level 2 event "✗" "Level failed"
+    exit 1
+  }
+
+
+_log_workflow level 3 jobs "summary" event "→" "Starting level"
 
 # Build job specs (name|condition|continueOnError)
 run_parallel \
    "summary|success()|" || {
-    _log_workflow level 2 event "✗" "Level failed"
+    _log_workflow level 3 event "✗" "Level failed"
     exit 1
   }
 
