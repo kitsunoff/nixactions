@@ -33,6 +33,12 @@ in
     if [ $? -eq 0 ]; then
       # Add to PATH for this job
       export PATH="$ENV_PATH/bin:$PATH"
+      
+      # Persist PATH to JOB_ENV for subsequent actions
+      if [ -n "''${JOB_ENV:-}" ]; then
+        echo "export PATH=\"$ENV_PATH/bin:\$PATH\"" >> "$JOB_ENV"
+      fi
+      
       echo "  ✓ Packages available in PATH"
     else
       echo "  ✗ Failed to build environment"

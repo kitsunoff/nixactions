@@ -327,11 +327,11 @@ else
   set +e
   if [ "$NIXACTIONS_LOG_FORMAT" = "simple" ]; then
     # Simple format - pass through unchanged
-    /nix/store/haypx2hnrzkkf5glkc1yvdc2ixjx4w1z-nix-shell/bin/nix-shell
+    /nix/store/k0jna9l5y7ifdkjqi5phrydxv2kza47v-nix-shell/bin/nix-shell
     _action_exit_code=$?
   else
     # Structured/JSON format - wrap each line
-    /nix/store/haypx2hnrzkkf5glkc1yvdc2ixjx4w1z-nix-shell/bin/nix-shell 2>&1 | _log_line "api-test" "nix-shell"
+    /nix/store/k0jna9l5y7ifdkjqi5phrydxv2kza47v-nix-shell/bin/nix-shell 2>&1 | _log_line "api-test" "nix-shell"
     _action_exit_code=${PIPESTATUS[0]}
   fi
   set -e
@@ -530,11 +530,11 @@ else
   set +e
   if [ "$NIXACTIONS_LOG_FORMAT" = "simple" ]; then
     # Simple format - pass through unchanged
-    /nix/store/808r6fkyk13jvwrxmxcza1k92qlwvmyi-nix-shell/bin/nix-shell
+    /nix/store/1sl7jy5qpsi29z65zkmjgqixz4p5ay2m-nix-shell/bin/nix-shell
     _action_exit_code=$?
   else
     # Structured/JSON format - wrap each line
-    /nix/store/808r6fkyk13jvwrxmxcza1k92qlwvmyi-nix-shell/bin/nix-shell 2>&1 | _log_line "file-processing" "nix-shell"
+    /nix/store/1sl7jy5qpsi29z65zkmjgqixz4p5ay2m-nix-shell/bin/nix-shell 2>&1 | _log_line "file-processing" "nix-shell"
     _action_exit_code=${PIPESTATUS[0]}
   fi
   set -e
@@ -733,11 +733,11 @@ else
   set +e
   if [ "$NIXACTIONS_LOG_FORMAT" = "simple" ]; then
     # Simple format - pass through unchanged
-    /nix/store/11np1xq6vql3skcx1q20y95c61r2pbxz-nix-shell/bin/nix-shell
+    /nix/store/a8ljl1nvp9mfag7hj2wg6707dszmgp0g-nix-shell/bin/nix-shell
     _action_exit_code=$?
   else
     # Structured/JSON format - wrap each line
-    /nix/store/11np1xq6vql3skcx1q20y95c61r2pbxz-nix-shell/bin/nix-shell 2>&1 | _log_line "multi-tool" "nix-shell"
+    /nix/store/a8ljl1nvp9mfag7hj2wg6707dszmgp0g-nix-shell/bin/nix-shell 2>&1 | _log_line "multi-tool" "nix-shell"
     _action_exit_code=${PIPESTATUS[0]}
   fi
   set -e
@@ -891,11 +891,11 @@ else
   set +e
   if [ "$NIXACTIONS_LOG_FORMAT" = "simple" ]; then
     # Simple format - pass through unchanged
-    /nix/store/ws8bh6zbiwqccs87s9j6i2dvbs707l39-nix-shell/bin/nix-shell
+    /nix/store/mlbpb2x3f1zyd0jkal98a0aiy7wz7a7i-nix-shell/bin/nix-shell
     _action_exit_code=$?
   else
     # Structured/JSON format - wrap each line
-    /nix/store/ws8bh6zbiwqccs87s9j6i2dvbs707l39-nix-shell/bin/nix-shell 2>&1 | _log_line "multi-tool" "nix-shell"
+    /nix/store/mlbpb2x3f1zyd0jkal98a0aiy7wz7a7i-nix-shell/bin/nix-shell 2>&1 | _log_line "multi-tool" "nix-shell"
     _action_exit_code=${PIPESTATUS[0]}
   fi
   set -e
