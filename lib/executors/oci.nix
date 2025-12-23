@@ -36,7 +36,7 @@ mkExecutor {
         # Create workspace directory in container
         ${pkgs.docker}/bin/docker exec "$CONTAINER_ID_OCI_${safeName}_${mode}" mkdir -p /workspace
         
-        echo "→ OCI workspace (mount): container $CONTAINER_ID_OCI_${safeName}_${mode}:/workspace"
+        _log_workflow executor "oci-${safeName}-mount" container "$CONTAINER_ID_OCI_${safeName}_${mode}" workspace "/workspace" event "→" "Workspace created"
       fi
     ''
     else # mode == "build"
@@ -83,7 +83,7 @@ mkExecutor {
           # Create workspace directory in container
           ${pkgs.docker}/bin/docker exec "$CONTAINER_ID_OCI_${safeName}_${mode}" mkdir -p /workspace
           
-          echo "→ OCI workspace (build): container $CONTAINER_ID_OCI_${safeName}_${mode}:/workspace"
+          _log_workflow executor "oci-${safeName}-build" container "$CONTAINER_ID_OCI_${safeName}_${mode}" workspace "/workspace" event "→" "Workspace created"
           echo "  Image includes: bash, coreutils, and all action derivations"
         fi
       '';
@@ -91,8 +91,7 @@ mkExecutor {
   # Cleanup container
   cleanupWorkspace = ''
     if [ -n "''${CONTAINER_ID_OCI_${safeName}_${mode}:-}" ]; then
-      echo ""
-      echo "→ Stopping and removing OCI container: $CONTAINER_ID_OCI_${safeName}_${mode}"
+      _log_workflow executor "oci-${safeName}-${mode}" container "$CONTAINER_ID_OCI_${safeName}_${mode}" event "→" "Stopping and removing container"
       ${pkgs.docker}/bin/docker stop "$CONTAINER_ID_OCI_${safeName}_${mode}" >/dev/null 2>&1 || true
       ${pkgs.docker}/bin/docker rm "$CONTAINER_ID_OCI_${safeName}_${mode}" >/dev/null 2>&1 || true
     fi
@@ -102,7 +101,7 @@ mkExecutor {
   executeJob = { jobName, actionDerivations, env }: ''
     # Ensure workspace is initialized
     if [ -z "''${CONTAINER_ID_OCI_${safeName}_${mode}:-}" ]; then
-      echo "Error: OCI workspace not initialized for ${image} (mode: ${mode})"
+      _log_workflow executor "oci-${safeName}-${mode}" event "✗" "Workspace not initialized"
       exit 1
     fi
     
@@ -122,11 +121,8 @@ mkExecutor {
         touch "$JOB_ENV"
         export JOB_ENV
         
-        echo "╔════════════════════════════════════════╗"
-        echo "║ JOB: ${jobName}"
-        echo "║ EXECUTOR: oci-${safeName}-${mode}"
-        echo "║ WORKDIR: $JOB_DIR"
-        echo "╚════════════════════════════════════════╝"
+        _log_job "${jobName}" executor "oci-${safeName}-${mode}" workdir "$JOB_DIR" event "▶" "Job starting"
+        
         
         # Set job-level environment
         ${lib.concatStringsSep "\n" (
@@ -183,22 +179,48 @@ mkExecutor {
             if [ "$_should_run" = "false" ]; then
               echo "⊘ Skipping ${actionName} (condition: $ACTION_CONDITION)"
             else
-              echo "→ ${actionName}"
+              _log job "${jobName}" action "${actionName}" event "→" "Starting"
+              
+              # Record start time (use fallback if nanoseconds not available)
+              _action_start_ns=$(date +%s%N 2>/dev/null || date +%s)
               
               # Source JOB_ENV and export all variables before running action
               set -a
               [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
               set +a
               
-              # Execute action as separate process
-              ${action}/bin/${lib.escapeShellArg actionName}
-              _action_exit_code=$?
+              # Execute action as separate process with output wrapping
+              set +e
+              if [ "$NIXACTIONS_LOG_FORMAT" = "simple" ]; then
+                # Simple format - pass through unchanged
+                ${action}/bin/${lib.escapeShellArg actionName}
+                _action_exit_code=$?
+              else
+                # Structured/JSON format - wrap each line
+                ${action}/bin/${lib.escapeShellArg actionName} 2>&1 | _log_line "${jobName}" "${actionName}"
+                _action_exit_code=''${PIPESTATUS[0]}
+              fi
+              set -e
               
-              # Track failure for subsequent actions
+              # Calculate duration
+              _action_end_ns=$(date +%s%N 2>/dev/null || date +%s)
+              if echo "$_action_start_ns" | grep -q "N"; then
+                # Fallback: seconds only
+                _action_duration_s=$((_action_end_ns - _action_start_ns))
+                _action_duration_ms=$((_action_duration_s * 1000))
+              else
+                # Nanoseconds available
+                _action_duration_ms=$(( (_action_end_ns - _action_start_ns) / 1000000 ))
+                _action_duration_s=$(echo "scale=3; $_action_duration_ms / 1000" | bc 2>/dev/null || echo $((_action_duration_ms / 1000)))
+              fi
+              
+              # Log result and track failure for subsequent actions
               if [ $_action_exit_code -ne 0 ]; then
                 ACTION_FAILED=true
-                echo "✗ Action ${actionName} failed (exit code: $_action_exit_code)"
+                _log job "${jobName}" action "${actionName}" duration "''${_action_duration_s}s" exit_code $_action_exit_code event "✗" "Failed"
                 # Don't exit immediately - let conditions handle flow
+              else
+                _log job "${jobName}" action "${actionName}" duration "''${_action_duration_s}s" exit_code $_action_exit_code event "✓" "Completed"
               fi
             fi
           ''
@@ -206,21 +228,18 @@ mkExecutor {
         
         # Fail job if any action failed
         if [ "$ACTION_FAILED" = "true" ]; then
-          echo ""
-          echo "✗ Job failed due to action failures"
+          _log_job "${jobName}" event "✗" "Job failed due to action failures"
           exit 1
         fi
       ''}
   '';
   
-  fetchArtifacts = null;
-  pushArtifacts = null;
   
   # Save artifact (executed on HOST after job completes)
   # Uses docker cp to copy from container to host
   saveArtifact = { name, path, jobName }: ''
     if [ -z "''${CONTAINER_ID_OCI_${safeName}_${mode}:-}" ]; then
-      echo "  ✗ Container not initialized"
+      _log_workflow event "✗" "Container not initialized"
       return 1
     fi
     
@@ -242,7 +261,7 @@ mkExecutor {
         "$CONTAINER_ID_OCI_${safeName}_${mode}:$JOB_DIR/${path}" \
         "$NIXACTIONS_ARTIFACTS_DIR/${name}/${path}"
     else
-      echo "  ✗ Path not found: ${path}"
+      _log_workflow artifact "${name}" path "${path}" event "✗" "Path not found"
       return 1
     fi
   '';
@@ -251,7 +270,7 @@ mkExecutor {
   # Uses docker cp to copy from host to container
   restoreArtifact = { name, jobName }: ''
     if [ -z "''${CONTAINER_ID_OCI_${safeName}_${mode}:-}" ]; then
-      echo "  ✗ Container not initialized"
+      _log_workflow event "✗" "Container not initialized"
       return 1
     fi
     
@@ -268,7 +287,7 @@ mkExecutor {
         fi
       done
     else
-      echo "  ✗ Artifact not found: ${name}"
+      _log_workflow artifact "${name}" event "✗" "Artifact not found"
       return 1
     fi
   '';

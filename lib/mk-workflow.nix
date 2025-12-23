@@ -4,12 +4,22 @@
   name,
   jobs,
   env ? {},
+  logging ? {},  # { format = "structured"; level = "info"; }
 }:
 
 assert lib.assertMsg (name != "") "Workflow name cannot be empty";
 assert lib.assertMsg (builtins.isAttrs jobs) "jobs must be an attribute set";
 
 let
+  # Import logging utilities
+  loggingLib = import ./logging.nix { inherit pkgs lib; };
+  
+  # Create logger for this workflow
+  logger = loggingLib.mkLogger {
+    workflow = name;
+    format = logging.format or "structured";
+    level = logging.level or "info";
+  };
   # Validate unique artifact names across all jobs
   allOutputs = lib.flatten (
     lib.mapAttrsToList (jobName: job: 
@@ -99,12 +109,11 @@ let
         
         ${lib.optionalString ((job.inputs or []) != []) ''
           # Restore artifacts on HOST before executing job
-          echo "→ Restoring artifacts: ${toString job.inputs}"
+          _log_job "${jobName}" artifacts "${toString job.inputs}" event "→" "Restoring artifacts"
           ${lib.concatMapStringsSep "\n" (name: ''
             ${executor.restoreArtifact { inherit name jobName; }}
-            echo "  ✓ Restored: ${name}"
+            _log_job "${jobName}" artifact "${name}" event "✓" "Restored"
           '') job.inputs}
-          echo ""
         ''}
         
         # Execute job via executor
@@ -115,8 +124,7 @@ let
         
         ${lib.optionalString ((job.outputs or {}) != {}) ''
           # Save artifacts on HOST after job completes
-          echo ""
-          echo "→ Saving artifacts"
+          _log_job "${jobName}" event "→" "Saving artifacts"
           ${lib.concatStringsSep "\n" (
             lib.mapAttrsToList (name: path: ''
               ${executor.saveArtifact { inherit name path jobName; }}
@@ -137,6 +145,14 @@ in pkgs.writeScriptBin name ''
   # Generate workflow ID
   WORKFLOW_ID="${name}-$(date +%s)-$$"
   export WORKFLOW_ID
+  
+  # Export workflow name for logging
+  export WORKFLOW_NAME="${name}"
+  
+  # Export log format (default: structured)
+  export NIXACTIONS_LOG_FORMAT=''${NIXACTIONS_LOG_FORMAT:-${logging.format or "structured"}}
+  
+  ${loggingLib.bashFunctions}
   
   # Setup artifacts directory on control node
   NIXACTIONS_ARTIFACTS_DIR="''${NIXACTIONS_ARTIFACTS_DIR:-$HOME/.cache/nixactions/$WORKFLOW_ID/artifacts}"
@@ -191,24 +207,24 @@ in pkgs.writeScriptBin name ''
     
     # Check condition
     if ! check_condition "$condition"; then
-      echo "⊘ Skipping $job_name (condition not met: $condition)"
+      _log_job "$job_name" condition "$condition" event "⊘" "Skipped"
       JOB_STATUS[$job_name]="skipped"
       return 0
     fi
     
     # Execute job in subshell (isolation by design)
     if ( job_$job_name ); then
-      echo "✓ Job $job_name succeeded"
+      _log_job "$job_name" event "✓" "Job succeeded"
       JOB_STATUS[$job_name]="success"
       return 0
     else
       local exit_code=$?
-      echo "✗ Job $job_name failed (exit code: $exit_code)"
+      _log_job "$job_name" exit_code $exit_code event "✗" "Job failed"
       FAILED_JOBS+=("$job_name")
       JOB_STATUS[$job_name]="failure"
       
       if [ "$continue_on_error" = "true" ]; then
-        echo "→ Continuing despite failure (continueOnError: true)"
+        _log_job "$job_name" continue_on_error true event "→" "Continuing despite failure"
         return 0
       else
         return $exit_code
@@ -245,7 +261,7 @@ in pkgs.writeScriptBin name ''
       for spec in "''${job_specs[@]}"; do
         IFS='|' read -r job_name condition continue_on_error <<< "$spec"
         if [ "''${JOB_STATUS[$job_name]:-unknown}" = "failure" ] && [ "$continue_on_error" != "true" ]; then
-          echo "⊘ Stopping workflow due to job failure: $job_name"
+          _log_workflow failed_job "$job_name" event "⊘" "Stopping workflow due to job failure"
           return 1
         fi
       done
@@ -260,12 +276,7 @@ in pkgs.writeScriptBin name ''
   
   # Main execution
   main() {
-    echo "════════════════════════════════════════"
-    echo " Workflow: ${name}"
-    echo " Execution: GitHub Actions style (parallel)"
-    echo " Levels: ${toString (maxDepth + 1)}"
-    echo "════════════════════════════════════════"
-    echo ""
+    _log_workflow levels ${toString (maxDepth + 1)} event "▶" "Workflow starting"
     
     # Execute level by level
     ${lib.concatMapStringsSep "\n\n" (levelIdx:
@@ -275,7 +286,7 @@ in pkgs.writeScriptBin name ''
       in
         if levelJobs == [] then ""
         else ''
-          echo "→ Level ${toString levelIdx}: ${lib.concatStringsSep ", " levelJobs}"
+          _log_workflow level ${toString levelIdx} jobs "${lib.concatStringsSep ", " levelJobs}" event "→" "Starting level"
           
           # Build job specs (name|condition|continueOnError)
           run_parallel \
@@ -287,40 +298,21 @@ in pkgs.writeScriptBin name ''
               in
                 ''"${jobName}|${condition}|${continueOnError}"''
             ) levelJobs} || {
-              echo "⊘ Level ${toString levelIdx} failed"
+              _log_workflow level ${toString levelIdx} event "✗" "Level failed"
               exit 1
             }
-          
-          echo ""
         ''
     ) (lib.range 0 maxDepth)}
     
+    
+    
     # Final report
-    echo "════════════════════════════════════════"
     if [ ''${#FAILED_JOBS[@]} -gt 0 ]; then
-      echo "✗ Workflow failed"
-      echo ""
-      echo "Failed jobs:"
-      printf '  - %s\n' "''${FAILED_JOBS[@]}"
-      echo ""
-      echo "Job statuses:"
-      for job in ${lib.concatStringsSep " " (lib.attrNames jobs)}; do
-        echo "  $job: ''${JOB_STATUS[$job]:-unknown}"
-      done
+      _log_workflow failed_jobs "''${FAILED_JOBS[*]}" event "✗" "Workflow failed"
       exit 1
     else
-      echo "✓ Workflow completed successfully"
-      echo ""
-      echo "All jobs succeeded:"
-      for job in ${lib.concatStringsSep " " (lib.attrNames jobs)}; do
-        if [ "''${JOB_STATUS[$job]:-unknown}" = "success" ]; then
-          echo "  ✓ $job"
-        elif [ "''${JOB_STATUS[$job]:-unknown}" = "skipped" ]; then
-          echo "  ⊘ $job (skipped)"
-        fi
-      done
+      _log_workflow event "✓" "Workflow completed successfully"
     fi
-    echo "════════════════════════════════════════"
   }
   
   main "$@"

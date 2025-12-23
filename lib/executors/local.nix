@@ -11,7 +11,7 @@ mkExecutor {
       WORKSPACE_DIR_LOCAL="/tmp/nixactions/$WORKFLOW_ID"
       mkdir -p "$WORKSPACE_DIR_LOCAL"
       export WORKSPACE_DIR_LOCAL
-      echo "→ Local workspace: $WORKSPACE_DIR_LOCAL"
+      _log_workflow executor "local" workspace "$WORKSPACE_DIR_LOCAL" event "→" "Workspace created"
     fi
   '';
   
@@ -19,12 +19,10 @@ mkExecutor {
   cleanupWorkspace = ''
     if [ -n "''${WORKSPACE_DIR_LOCAL:-}" ]; then
       if [ "''${NIXACTIONS_KEEP_WORKSPACE:-}" != "1" ]; then
-        echo ""
         echo "→ Cleaning up local workspace: $WORKSPACE_DIR_LOCAL"
         rm -rf "$WORKSPACE_DIR_LOCAL"
       else
-        echo ""
-        echo "→ Local workspace preserved: $WORKSPACE_DIR_LOCAL"
+        _log_workflow executor "local" workspace "$WORKSPACE_DIR_LOCAL" event "→" "Workspace preserved"
       fi
     fi
   '';
@@ -41,11 +39,8 @@ mkExecutor {
     touch "$JOB_ENV"
     export JOB_ENV
     
-    echo "╔════════════════════════════════════════╗"
-    echo "║ JOB: ${jobName}"
-    echo "║ EXECUTOR: local"
-    echo "║ WORKDIR: $JOB_DIR"
-    echo "╚════════════════════════════════════════╝"
+    _log_job "${jobName}" executor "local" workdir "$JOB_DIR" event "▶" "Job starting"
+    
     
     # Set job-level environment
     ${lib.concatStringsSep "\n" (
@@ -102,22 +97,45 @@ mkExecutor {
         if [ "$_should_run" = "false" ]; then
           echo "⊘ Skipping ${actionName} (condition: $ACTION_CONDITION)"
         else
-          echo "→ ${actionName}"
+          _log job "${jobName}" action "${actionName}" event "→" "Starting"
+          
+          # Record start time
+          _action_start_ns=$(date +%s%N 2>/dev/null || echo "0")
           
           # Source JOB_ENV and export all variables before running action
           set -a
           [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
           set +a
           
-          # Execute action as separate process
-          ${action}/bin/${lib.escapeShellArg actionName}
-          _action_exit_code=$?
+          # Execute action as separate process with output wrapping
+          set +e
+          if [ "$NIXACTIONS_LOG_FORMAT" = "simple" ]; then
+            # Simple format - pass through unchanged
+            ${action}/bin/${lib.escapeShellArg actionName}
+            _action_exit_code=$?
+          else
+            # Structured/JSON format - wrap each line
+            ${action}/bin/${lib.escapeShellArg actionName} 2>&1 | _log_line "${jobName}" "${actionName}"
+            _action_exit_code=''${PIPESTATUS[0]}
+          fi
+          set -e
           
-          # Track failure for subsequent actions
+          # Calculate duration
+          if [ "$_action_start_ns" != "0" ]; then
+            _action_end_ns=$(date +%s%N 2>/dev/null || echo "0")
+            _action_duration_ms=$(( (_action_end_ns - _action_start_ns) / 1000000 ))
+            _action_duration_s=$(echo "scale=3; $_action_duration_ms / 1000" | ${pkgs.bc}/bin/bc 2>/dev/null || echo "0")
+          else
+            _action_duration_s="0"
+          fi
+          
+          # Log result and track failure for subsequent actions
           if [ $_action_exit_code -ne 0 ]; then
             ACTION_FAILED=true
-            echo "✗ Action ${actionName} failed (exit code: $_action_exit_code)"
+            _log job "${jobName}" action "${actionName}" duration "''${_action_duration_s}s" exit_code $_action_exit_code event "✗" "Failed"
             # Don't exit immediately - let conditions handle flow
+          else
+            _log job "${jobName}" action "${actionName}" duration "''${_action_duration_s}s" exit_code $_action_exit_code event "✓" "Completed"
           fi
         fi
       ''
@@ -125,17 +143,11 @@ mkExecutor {
     
     # Fail job if any action failed
     if [ "$ACTION_FAILED" = "true" ]; then
-      echo ""
-      echo "✗ Job failed due to action failures"
+      _log_job "${jobName}" event "✗" "Job failed due to action failures"
       exit 1
     fi
   '';
   
-  provision = null;
-  
-  # Local executor doesn't need to fetch - artifacts already on control node
-  fetchArtifacts = null;
-  pushArtifacts = null;
   
   # Save artifact (executed on HOST after job completes)
   saveArtifact = { name, path, jobName }: ''
@@ -152,7 +164,7 @@ mkExecutor {
       
       cp -r "$JOB_DIR/${path}" "$NIXACTIONS_ARTIFACTS_DIR/${name}/${path}"
     else
-      echo "  ✗ Path not found: ${path}"
+      _log_workflow artifact "${name}" path "${path}" event "✗" "Path not found"
       return 1
     fi
   '';
@@ -165,7 +177,7 @@ mkExecutor {
       mkdir -p "$JOB_DIR"
       cp -r "$NIXACTIONS_ARTIFACTS_DIR/${name}"/* "$JOB_DIR/" 2>/dev/null || true
     else
-      echo "  ✗ Artifact not found: ${name}"
+      _log_workflow artifact "${name}" event "✗" "Artifact not found"
       return 1
     fi
   '';

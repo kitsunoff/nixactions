@@ -11,6 +11,9 @@ let
   # Standard actions
   actions = import ./actions/default.nix { inherit pkgs lib; };
   
+  # Logging utilities
+  logging = import ./logging.nix { inherit pkgs lib; };
+  
 in {
   # Export core constructors
   inherit mkExecutor mkWorkflow;
@@ -20,4 +23,7 @@ in {
   
   # Export standard actions
   inherit actions;
+  
+  # Export logging utilities
+  inherit logging;
 }

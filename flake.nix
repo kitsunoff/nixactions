@@ -62,6 +62,9 @@
           # Example: Test job isolation
           example-test-isolation = import ./examples/02-features/test-isolation.nix { inherit pkgs platform; };
           
+          # Example: Structured logging
+          example-structured-logging = import ./examples/02-features/structured-logging.nix { inherit pkgs platform; };
+          
           # ===== 03-real-world: Production pipelines =====
           
           # Example: Complete CI/CD pipeline

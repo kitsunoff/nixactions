@@ -86,25 +86,50 @@ bash = ''
 
 ---
 
-### 4. **Structured Logging**
-```bash
-# Сейчас:
-→ checkout
-→ test
-✓ Job succeeded
-
-# Хочется:
-[2025-12-23T02:30:00Z] [workflow:ci] [job:test] [action:checkout] Starting
-[2025-12-23T02:30:01Z] [workflow:ci] [job:test] [action:checkout] Completed (1.2s)
-[2025-12-23T02:30:01Z] [workflow:ci] [job:test] [action:test] Starting
-[2025-12-23T02:30:05Z] [workflow:ci] [job:test] [action:test] Completed (4.1s)
-[2025-12-23T02:30:05Z] [workflow:ci] [job:test] Completed (5.3s)
+### 4. **Structured Logging** ✅ IMPLEMENTED
+```nix
+{
+  logging = {
+    format = "structured";  # "structured", "simple", or "json"
+    level = "info";         # "info" or "debug"
+  };
+}
 ```
 
-**Почему важно:**
-- Парсинг логов для аналитики
-- Время выполнения каждого шага
-- Структурированные данные для мониторинга
+```bash
+# Structured format (default):
+[2025-12-23T10:58:44.123Z] [workflow:ci] [job:test] [action:checkout] Starting
+[2025-12-23T10:58:44.321Z] [workflow:ci] [job:test] [action:checkout] Cloning repository...
+[2025-12-23T10:58:45.456Z] [workflow:ci] [job:test] [action:checkout] Completed (duration: 1.333s, exit: 0)
+
+# JSON format:
+{"timestamp":"2025-12-23T10:58:44.123Z","workflow":"ci","job":"test","action":"checkout","message":"Starting"}
+{"timestamp":"2025-12-23T10:58:45.456Z","workflow":"ci","job":"test","action":"checkout","message":"Completed","duration_ms":1333,"exit_code":0}
+
+# Simple format (legacy):
+→ checkout
+✓ Job succeeded
+```
+
+**Реализовано:**
+- ✅ Три формата: structured (default), JSON, simple
+- ✅ Timestamp с миллисекундами
+- ✅ Время выполнения каждого action (duration)
+- ✅ Exit code для каждого action
+- ✅ Все stdout/stderr экшенов обёрнуты в структурированный формат
+- ✅ Переменная окружения NIXACTIONS_LOG_FORMAT для runtime override
+
+**Использование:**
+```bash
+# Structured logs (default)
+nix run .#my-workflow
+
+# JSON logs for parsing
+NIXACTIONS_LOG_FORMAT=json nix run .#my-workflow | jq 'select(.event == "complete")'
+
+# Simple logs (legacy)
+NIXACTIONS_LOG_FORMAT=simple nix run .#my-workflow
+```
 
 ---
 
