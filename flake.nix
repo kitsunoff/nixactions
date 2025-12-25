@@ -96,19 +96,11 @@
               # Discover examples
               examples = discoverAllExamples pkgs;
               
-              # Separate regular examples and tests
-              regularExamples = lib.filter (ex: !ex.isTest) examples;
-              testExamples = lib.filter (ex: ex.isTest) examples;
-              
               # Format example list
               formatExample = ex: "echo \"  nix run .#${ex.packageName}\"";
               
-              examplesList = lib.concatStringsSep "\n" (
-                map formatExample regularExamples
-              );
-              
-              testsList = lib.concatStringsSep "\n" (
-                map formatExample testExamples
+              allExamplesList = lib.concatStringsSep "\n" (
+                map formatExample examples
               );
               
             in ''
@@ -116,13 +108,9 @@
               echo "║ NixActions - Development Environment                  ║"
               echo "╚═══════════════════════════════════════════════════════╝"
               echo ""
-              echo "📦 Discovered ${toString (builtins.length examples)} examples (${toString (builtins.length regularExamples)} examples, ${toString (builtins.length testExamples)} tests)"
+              echo "📦 Available examples (${toString (builtins.length examples)}):"
               echo ""
-              echo "Examples:"
-              ${examplesList}
-              echo ""
-              echo "Tests:"
-              ${testsList}
+              ${allExamplesList}
               echo ""
               echo "💡 More info: nix flake show"
               echo "📚 Documentation: cat README.md"
