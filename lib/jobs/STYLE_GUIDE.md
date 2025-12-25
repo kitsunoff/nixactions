@@ -2,6 +2,8 @@
 
 This document defines the coding standards and patterns for creating reusable job templates in NixActions.
 
+> **📘 See also:** [INPUTS_OUTPUTS_DESIGN.md](./INPUTS_OUTPUTS_DESIGN.md) for comprehensive guide on designing inputs, outputs, and job dependencies.
+
 ## Table of Contents
 
 1. [Philosophy](#philosophy)
@@ -13,6 +15,7 @@ This document defines the coding standards and patterns for creating reusable jo
 7. [Documentation](#documentation)
 8. [Examples](#examples)
 9. [Testing](#testing)
+10. [Inputs/Outputs/Needs](#inputsoutputsneeds)
 
 ---
 
@@ -1073,6 +1076,91 @@ If an action doesn't exist yet, consider:
 
 ---
 
+## Inputs/Outputs/Needs
+
+For comprehensive guide on designing job templates with inputs, outputs, and dependencies, see:
+
+📘 **[INPUTS_OUTPUTS_DESIGN.md](./INPUTS_OUTPUTS_DESIGN.md)**
+
+### Quick Reference
+
+**Outputs** - Save artifacts for other jobs:
+```nix
+{
+  executor = null;
+  actions = [ /* build actions */ ];
+  outputs = {
+    dist = "dist/";           # Save dist/ as "dist" artifact
+    binary = "bin/app";       # Save bin/app as "binary" artifact
+  };
+}
+```
+
+**Inputs** - Restore artifacts from other jobs:
+```nix
+{
+  executor = null;
+  needs = [ "build" ];        # Wait for build job
+  inputs = [ "dist" ];        # Restore "dist" artifact
+  actions = [ /* use dist/ */ ];
+}
+```
+
+**Needs** - Job dependencies:
+```nix
+{
+  executor = null;
+  needs = [ "build" "lint" ]; # Wait for both jobs
+  actions = [ /* ... */ ];
+}
+```
+
+### For Job Templates
+
+**Document inputs/outputs clearly:**
+```nix
+# Job Template
+#
+# Inputs:
+#   - build-artifact: Build output from previous job
+#
+# Outputs:
+#   - test-results: Test execution results
+#
+# Needs:
+#   - User must set to job that produces build-artifact
+```
+
+**Use optional inputs/outputs:**
+```nix
+{ saveResults ? false }:
+
+{
+  inputs = [ "dist" ];
+  outputs = lib.optionalAttrs saveResults {
+    test-results = "results/";
+  };
+}
+```
+
+**Set internal needs in multi-job templates:**
+```nix
+{
+  build = {
+    outputs = { dist = "dist/"; };
+  };
+  
+  test = {
+    needs = [ "build" ];      # Template sets dependency
+    inputs = [ "dist" ];       # Template uses output
+  };
+}
+```
+
+See [INPUTS_OUTPUTS_DESIGN.md](./INPUTS_OUTPUTS_DESIGN.md) for complete patterns and examples.
+
+---
+
 ## Questions?
 
 When designing a job template, ask:
@@ -1080,5 +1168,6 @@ When designing a job template, ask:
 2. **Is this too specific?** → Maybe it's just an example, not a library job
 3. **Can users customize it easily?** → Add parameters
 4. **Does it compose well?** → Returns standard job structure
+5. **Are inputs/outputs clear?** → Document them explicitly
 
 Remember: **Jobs orchestrate actions into reusable workflow patterns.**
