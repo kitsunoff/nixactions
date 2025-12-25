@@ -104,7 +104,7 @@
               featuredExamples = lib.take 6 regularExamples;
               
               # Format example list
-              formatExample = ex: "  nix run .#${ex.packageName}";
+              formatExample = ex: "echo \"  nix run .#${ex.packageName}\"";
               
               featuredList = lib.concatStringsSep "\n" (
                 map formatExample featuredExamples
