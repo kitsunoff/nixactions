@@ -5,7 +5,7 @@ WORKFLOW_ID="matrix-demo-$(date +%s)-$$"
 export WORKFLOW_ID WORKFLOW_NAME="matrix-demo"
 export NIXACTIONS_LOG_FORMAT=${NIXACTIONS_LOG_FORMAT:-structured}
 
-source /nix/store/p95kzip1952gbhfggns20djl5fwgs5sk-nixactions-logging/bin/nixactions-logging
+source /nix/store/c6a8pgh4xzjl6zc1hglg5l823xfvbdr1-nixactions-logging/bin/nixactions-logging
 source /nix/store/2r76x2y7xbsx2fhfhkxrxszpckydci7y-nixactions-retry/bin/nixactions-retry
 source /nix/store/1mgqdp33xiddrm2va94abw7l8wdvzz0q-nixactions-runtime/bin/nixactions-runtime
 
@@ -18,6 +18,66 @@ FAILED_JOBS=()
 WORKFLOW_CANCELLED=false
 trap 'WORKFLOW_CANCELLED=true; echo "⊘ Workflow cancelled"; exit 130' SIGINT SIGTERM
 
+# ============================================
+# Environment Provider Execution
+# ============================================
+
+# Helper: Execute provider and apply exports
+run_provider() {
+  local provider=$1
+  local provider_name=$(basename "$provider")
+  
+  _log_workflow provider "$provider_name" event "→" "Loading environment"
+  
+  # Execute provider, capture output
+  local output
+  if ! output=$("$provider" 2>&1); then
+    local exit_code=$?
+    _log_workflow provider "$provider_name" event "✗" "Provider failed (exit $exit_code)"
+    echo "$output" >&2
+    exit $exit_code
+  fi
+  
+  # Apply exports - providers always override previous values
+  # Runtime environment (already in shell) has highest priority
+  local vars_set=0
+  local vars_from_runtime=0
+  
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^export[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)= ]]; then
+      local key="${BASH_REMATCH[1]}"
+      
+      # Check if variable was set from runtime (before provider execution started)
+      # We detect this by checking if it's in our RUNTIME_ENV_KEYS list
+      if [[ " ${RUNTIME_ENV_KEYS} " =~ " ${key} " ]]; then
+        # Runtime env has highest priority - skip
+        vars_from_runtime=$((vars_from_runtime + 1))
+      else
+        # Apply provider value (may override previous provider)
+        eval "$line"
+        vars_set=$((vars_set + 1))
+      fi
+    fi
+  done <<< "$output"
+  
+  if [ $vars_set -gt 0 ]; then
+    _log_workflow provider "$provider_name" vars_set "$vars_set" event "✓" "Variables loaded"
+  fi
+  if [ $vars_from_runtime -gt 0 ]; then
+    _log_workflow provider "$provider_name" vars_from_runtime "$vars_from_runtime" event "⊘" "Variables skipped (runtime override)"
+  fi
+}
+
+# Execute envFrom providers in order
+
+
+# Apply workflow-level env (hardcoded, lowest priority)
+
+
+# ============================================
+# Job Functions
+# ============================================
+
 job_build-arch-amd64-distro-alpine() {
       source /nix/store/gjwg64hal8wgjdz7mmhgdyq4c7qbqpfr-nixactions-local-executor/bin/nixactions-local-executor
 setup_local_workspace
@@ -25,8 +85,11 @@ setup_local_workspace
       setup_local_job "build-arch-amd64-distro-alpine"
 
 ACTION_FAILED=false
+# Set action-level environment variables
 
-run_action "build-arch-amd64-distro-alpine" "build-amd64-alpine" "/nix/store/1hj1gq4jmxzhphqslqsaabfh80kwz55c-build-amd64-alpine/bin/build-amd64-alpine" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
+# Set retry environment variables
+
+run_action "build-arch-amd64-distro-alpine" "build-amd64-alpine" "/nix/store/2jgsp5clyd48x8a2zn9g8v6kmvldy9dg-build-amd64-alpine/bin/build-amd64-alpine" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 if [ "$ACTION_FAILED" = "true" ]; then
   _log_job "build-arch-amd64-distro-alpine" event "✗" "Job failed due to action failures"
@@ -49,8 +112,11 @@ setup_local_workspace
       setup_local_job "build-arch-amd64-distro-debian"
 
 ACTION_FAILED=false
+# Set action-level environment variables
 
-run_action "build-arch-amd64-distro-debian" "build-amd64-debian" "/nix/store/f7jfvy3rqqz79b767cj16sgh663xy3ss-build-amd64-debian/bin/build-amd64-debian" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
+# Set retry environment variables
+
+run_action "build-arch-amd64-distro-debian" "build-amd64-debian" "/nix/store/xlghvqkarksv1irl28s80s5lzarl7p0n-build-amd64-debian/bin/build-amd64-debian" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 if [ "$ACTION_FAILED" = "true" ]; then
   _log_job "build-arch-amd64-distro-debian" event "✗" "Job failed due to action failures"
@@ -73,8 +139,11 @@ setup_local_workspace
       setup_local_job "build-arch-arm64-distro-alpine"
 
 ACTION_FAILED=false
+# Set action-level environment variables
 
-run_action "build-arch-arm64-distro-alpine" "build-arm64-alpine" "/nix/store/8di988vxb5q89kzg6zx9pa80cs1rzzny-build-arm64-alpine/bin/build-arm64-alpine" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
+# Set retry environment variables
+
+run_action "build-arch-arm64-distro-alpine" "build-arm64-alpine" "/nix/store/3cym7l7flcccab6g86cg2k43v7z5y3da-build-arm64-alpine/bin/build-arm64-alpine" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 if [ "$ACTION_FAILED" = "true" ]; then
   _log_job "build-arch-arm64-distro-alpine" event "✗" "Job failed due to action failures"
@@ -97,8 +166,11 @@ setup_local_workspace
       setup_local_job "build-arch-arm64-distro-debian"
 
 ACTION_FAILED=false
+# Set action-level environment variables
 
-run_action "build-arch-arm64-distro-debian" "build-arm64-debian" "/nix/store/kd8p8rj2apf0ncfqzqx8p0jisf117nlg-build-arm64-debian/bin/build-arm64-debian" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
+# Set retry environment variables
+
+run_action "build-arch-arm64-distro-debian" "build-arm64-debian" "/nix/store/cvcc0c2ck9d0cvl3infz9j7agjz3m5yl-build-arm64-debian/bin/build-arm64-debian" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 if [ "$ACTION_FAILED" = "true" ]; then
   _log_job "build-arch-arm64-distro-debian" event "✗" "Job failed due to action failures"
@@ -139,8 +211,11 @@ _log_job "deploy" artifact "build-arm64-alpine" path "." event "✓" "Restored"
       setup_local_job "deploy"
 
 ACTION_FAILED=false
+# Set action-level environment variables
 
-run_action "deploy" "deploy-all-builds" "/nix/store/gd0kgpih366gyidcqzjgbmvnyx8xwbbc-deploy-all-builds/bin/deploy-all-builds" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
+# Set retry environment variables
+
+run_action "deploy" "deploy-all-builds" "/nix/store/9qqxcncgzyslwl60pl75j15bs7b3wiba-deploy-all-builds/bin/deploy-all-builds" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 if [ "$ACTION_FAILED" = "true" ]; then
   _log_job "deploy" event "✗" "Job failed due to action failures"
@@ -156,8 +231,11 @@ setup_local_workspace
       setup_local_job "summary"
 
 ACTION_FAILED=false
+# Set action-level environment variables
 
-run_action "summary" "workflow-summary" "/nix/store/5hrs7z5a6b8p8hrj3hfyfph0rwz0kshc-workflow-summary/bin/workflow-summary" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
+# Set retry environment variables
+
+run_action "summary" "workflow-summary" "/nix/store/5dkqq35g3wbavyc1im3c5gs8irvr6wx1-workflow-summary/bin/workflow-summary" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 if [ "$ACTION_FAILED" = "true" ]; then
   _log_job "summary" event "✗" "Job failed due to action failures"
@@ -180,7 +258,6 @@ fi
 /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker exec \
   -e WORKFLOW_NAME \
   -e NIXACTIONS_LOG_FORMAT \
-   \
   "$CONTAINER_ID_OCI_node_18_alpine_mount" \
   bash -c 'set -uo pipefail
 source /nix/store/*-nixactions-logging/bin/nixactions-logging
@@ -194,9 +271,14 @@ touch "$JOB_ENV"
 export JOB_ENV
 _log_job "test-node-18-os-alpine" executor "oci-node_18_alpine-mount" workdir "$JOB_DIR" event "▶" "Job starting"
 
-ACTION_FAILED=false
+# Set job-level environment variables
 
-run_action "test-node-18-os-alpine" "test-node-18-on-alpine" "/nix/store/jafskyk77g76fmgk5c6044dlc5ldyrs3-test-node-18-on-alpine/bin/test-node-18-on-alpine" '\''success()'\'' '\''date +%s%N 2>/dev/null || date +%s'\''
+ACTION_FAILED=false
+# Set action-level environment variables
+
+# Set retry environment variables
+
+run_action "test-node-18-os-alpine" "test-node-18-on-alpine" "/nix/store/1y76dwqd7p2izcwaiaw8lzb8hpknf297-test-node-18-on-alpine/bin/test-node-18-on-alpine" '\''success()'\'' '\''date +%s%N 2>/dev/null || date +%s'\''
 
 if [ "$ACTION_FAILED" = "true" ]; then
   _log_job "test-node-18-os-alpine" event "✗" "Job failed due to action failures"
@@ -221,7 +303,6 @@ fi
 /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker exec \
   -e WORKFLOW_NAME \
   -e NIXACTIONS_LOG_FORMAT \
-   \
   "$CONTAINER_ID_OCI_node_18_ubuntu_mount" \
   bash -c 'set -uo pipefail
 source /nix/store/*-nixactions-logging/bin/nixactions-logging
@@ -235,9 +316,14 @@ touch "$JOB_ENV"
 export JOB_ENV
 _log_job "test-node-18-os-ubuntu" executor "oci-node_18_ubuntu-mount" workdir "$JOB_DIR" event "▶" "Job starting"
 
-ACTION_FAILED=false
+# Set job-level environment variables
 
-run_action "test-node-18-os-ubuntu" "test-node-18-on-ubuntu" "/nix/store/jhbv8ks32bsv9frqp4k0mggwics51vwf-test-node-18-on-ubuntu/bin/test-node-18-on-ubuntu" '\''success()'\'' '\''date +%s%N 2>/dev/null || date +%s'\''
+ACTION_FAILED=false
+# Set action-level environment variables
+
+# Set retry environment variables
+
+run_action "test-node-18-os-ubuntu" "test-node-18-on-ubuntu" "/nix/store/jcwns5c2wlibcajs2cdb0sys0yjkqmg1-test-node-18-on-ubuntu/bin/test-node-18-on-ubuntu" '\''success()'\'' '\''date +%s%N 2>/dev/null || date +%s'\''
 
 if [ "$ACTION_FAILED" = "true" ]; then
   _log_job "test-node-18-os-ubuntu" event "✗" "Job failed due to action failures"
@@ -262,7 +348,6 @@ fi
 /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker exec \
   -e WORKFLOW_NAME \
   -e NIXACTIONS_LOG_FORMAT \
-   \
   "$CONTAINER_ID_OCI_node_20_alpine_mount" \
   bash -c 'set -uo pipefail
 source /nix/store/*-nixactions-logging/bin/nixactions-logging
@@ -276,9 +361,14 @@ touch "$JOB_ENV"
 export JOB_ENV
 _log_job "test-node-20-os-alpine" executor "oci-node_20_alpine-mount" workdir "$JOB_DIR" event "▶" "Job starting"
 
-ACTION_FAILED=false
+# Set job-level environment variables
 
-run_action "test-node-20-os-alpine" "test-node-20-on-alpine" "/nix/store/8f98h029bfjrnlf75wid1g42ayp6j50l-test-node-20-on-alpine/bin/test-node-20-on-alpine" '\''success()'\'' '\''date +%s%N 2>/dev/null || date +%s'\''
+ACTION_FAILED=false
+# Set action-level environment variables
+
+# Set retry environment variables
+
+run_action "test-node-20-os-alpine" "test-node-20-on-alpine" "/nix/store/061g36ccgy8l4fiwwn75pcya300ljcmm-test-node-20-on-alpine/bin/test-node-20-on-alpine" '\''success()'\'' '\''date +%s%N 2>/dev/null || date +%s'\''
 
 if [ "$ACTION_FAILED" = "true" ]; then
   _log_job "test-node-20-os-alpine" event "✗" "Job failed due to action failures"
@@ -303,7 +393,6 @@ fi
 /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker exec \
   -e WORKFLOW_NAME \
   -e NIXACTIONS_LOG_FORMAT \
-   \
   "$CONTAINER_ID_OCI_node_20_ubuntu_mount" \
   bash -c 'set -uo pipefail
 source /nix/store/*-nixactions-logging/bin/nixactions-logging
@@ -317,9 +406,14 @@ touch "$JOB_ENV"
 export JOB_ENV
 _log_job "test-node-20-os-ubuntu" executor "oci-node_20_ubuntu-mount" workdir "$JOB_DIR" event "▶" "Job starting"
 
-ACTION_FAILED=false
+# Set job-level environment variables
 
-run_action "test-node-20-os-ubuntu" "test-node-20-on-ubuntu" "/nix/store/2y4saba4rrn36bhgxmp9sa2pl1zisb6k-test-node-20-on-ubuntu/bin/test-node-20-on-ubuntu" '\''success()'\'' '\''date +%s%N 2>/dev/null || date +%s'\''
+ACTION_FAILED=false
+# Set action-level environment variables
+
+# Set retry environment variables
+
+run_action "test-node-20-os-ubuntu" "test-node-20-on-ubuntu" "/nix/store/hnfzsrly68lz2afr4i5lfb4nmsqbvixz-test-node-20-on-ubuntu/bin/test-node-20-on-ubuntu" '\''success()'\'' '\''date +%s%N 2>/dev/null || date +%s'\''
 
 if [ "$ACTION_FAILED" = "true" ]; then
   _log_job "test-node-20-os-ubuntu" event "✗" "Job failed due to action failures"
@@ -344,7 +438,6 @@ fi
 /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker exec \
   -e WORKFLOW_NAME \
   -e NIXACTIONS_LOG_FORMAT \
-   \
   "$CONTAINER_ID_OCI_node_22_alpine_mount" \
   bash -c 'set -uo pipefail
 source /nix/store/*-nixactions-logging/bin/nixactions-logging
@@ -358,9 +451,14 @@ touch "$JOB_ENV"
 export JOB_ENV
 _log_job "test-node-22-os-alpine" executor "oci-node_22_alpine-mount" workdir "$JOB_DIR" event "▶" "Job starting"
 
-ACTION_FAILED=false
+# Set job-level environment variables
 
-run_action "test-node-22-os-alpine" "test-node-22-on-alpine" "/nix/store/9pf55rxni1rf8vck13r0mmzhnccvxgyj-test-node-22-on-alpine/bin/test-node-22-on-alpine" '\''success()'\'' '\''date +%s%N 2>/dev/null || date +%s'\''
+ACTION_FAILED=false
+# Set action-level environment variables
+
+# Set retry environment variables
+
+run_action "test-node-22-os-alpine" "test-node-22-on-alpine" "/nix/store/jq4gc2ghwpp0s1zvyyggcb4xyqjhnjb4-test-node-22-on-alpine/bin/test-node-22-on-alpine" '\''success()'\'' '\''date +%s%N 2>/dev/null || date +%s'\''
 
 if [ "$ACTION_FAILED" = "true" ]; then
   _log_job "test-node-22-os-alpine" event "✗" "Job failed due to action failures"
@@ -385,7 +483,6 @@ fi
 /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker exec \
   -e WORKFLOW_NAME \
   -e NIXACTIONS_LOG_FORMAT \
-   \
   "$CONTAINER_ID_OCI_node_22_ubuntu_mount" \
   bash -c 'set -uo pipefail
 source /nix/store/*-nixactions-logging/bin/nixactions-logging
@@ -399,9 +496,14 @@ touch "$JOB_ENV"
 export JOB_ENV
 _log_job "test-node-22-os-ubuntu" executor "oci-node_22_ubuntu-mount" workdir "$JOB_DIR" event "▶" "Job starting"
 
-ACTION_FAILED=false
+# Set job-level environment variables
 
-run_action "test-node-22-os-ubuntu" "test-node-22-on-ubuntu" "/nix/store/2kvwp1khz2y766xs809dzi7912bm4h6r-test-node-22-on-ubuntu/bin/test-node-22-on-ubuntu" '\''success()'\'' '\''date +%s%N 2>/dev/null || date +%s'\''
+ACTION_FAILED=false
+# Set action-level environment variables
+
+# Set retry environment variables
+
+run_action "test-node-22-os-ubuntu" "test-node-22-on-ubuntu" "/nix/store/hclmkgwxx7vjy7p17caq8w181zw4sg1y-test-node-22-on-ubuntu/bin/test-node-22-on-ubuntu" '\''success()'\'' '\''date +%s%N 2>/dev/null || date +%s'\''
 
 if [ "$ACTION_FAILED" = "true" ]; then
   _log_job "test-node-22-os-ubuntu" event "✗" "Job failed due to action failures"

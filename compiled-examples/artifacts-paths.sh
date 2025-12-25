@@ -5,7 +5,7 @@ WORKFLOW_ID="artifacts-paths-$(date +%s)-$$"
 export WORKFLOW_ID WORKFLOW_NAME="artifacts-paths"
 export NIXACTIONS_LOG_FORMAT=${NIXACTIONS_LOG_FORMAT:-structured}
 
-source /nix/store/p95kzip1952gbhfggns20djl5fwgs5sk-nixactions-logging/bin/nixactions-logging
+source /nix/store/c6a8pgh4xzjl6zc1hglg5l823xfvbdr1-nixactions-logging/bin/nixactions-logging
 source /nix/store/2r76x2y7xbsx2fhfhkxrxszpckydci7y-nixactions-retry/bin/nixactions-retry
 source /nix/store/1mgqdp33xiddrm2va94abw7l8wdvzz0q-nixactions-runtime/bin/nixactions-runtime
 
@@ -18,6 +18,66 @@ FAILED_JOBS=()
 WORKFLOW_CANCELLED=false
 trap 'WORKFLOW_CANCELLED=true; echo "⊘ Workflow cancelled"; exit 130' SIGINT SIGTERM
 
+# ============================================
+# Environment Provider Execution
+# ============================================
+
+# Helper: Execute provider and apply exports
+run_provider() {
+  local provider=$1
+  local provider_name=$(basename "$provider")
+  
+  _log_workflow provider "$provider_name" event "→" "Loading environment"
+  
+  # Execute provider, capture output
+  local output
+  if ! output=$("$provider" 2>&1); then
+    local exit_code=$?
+    _log_workflow provider "$provider_name" event "✗" "Provider failed (exit $exit_code)"
+    echo "$output" >&2
+    exit $exit_code
+  fi
+  
+  # Apply exports - providers always override previous values
+  # Runtime environment (already in shell) has highest priority
+  local vars_set=0
+  local vars_from_runtime=0
+  
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^export[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)= ]]; then
+      local key="${BASH_REMATCH[1]}"
+      
+      # Check if variable was set from runtime (before provider execution started)
+      # We detect this by checking if it's in our RUNTIME_ENV_KEYS list
+      if [[ " ${RUNTIME_ENV_KEYS} " =~ " ${key} " ]]; then
+        # Runtime env has highest priority - skip
+        vars_from_runtime=$((vars_from_runtime + 1))
+      else
+        # Apply provider value (may override previous provider)
+        eval "$line"
+        vars_set=$((vars_set + 1))
+      fi
+    fi
+  done <<< "$output"
+  
+  if [ $vars_set -gt 0 ]; then
+    _log_workflow provider "$provider_name" vars_set "$vars_set" event "✓" "Variables loaded"
+  fi
+  if [ $vars_from_runtime -gt 0 ]; then
+    _log_workflow provider "$provider_name" vars_from_runtime "$vars_from_runtime" event "⊘" "Variables skipped (runtime override)"
+  fi
+}
+
+# Execute envFrom providers in order
+
+
+# Apply workflow-level env (hardcoded, lowest priority)
+
+
+# ============================================
+# Job Functions
+# ============================================
+
 job_build() {
       source /nix/store/gjwg64hal8wgjdz7mmhgdyq4c7qbqpfr-nixactions-local-executor/bin/nixactions-local-executor
 setup_local_workspace
@@ -25,8 +85,11 @@ setup_local_workspace
       setup_local_job "build"
 
 ACTION_FAILED=false
+# Set action-level environment variables
 
-run_action "build" "build" "/nix/store/p50sas9887lp1h8qwbqd5nrf1qmqw2w5-build/bin/build" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
+# Set retry environment variables
+
+run_action "build" "build" "/nix/store/i28in7r35hrimbakqgzpg360w51bvgwp-build/bin/build" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 if [ "$ACTION_FAILED" = "true" ]; then
   _log_job "build" event "✗" "Job failed due to action failures"
@@ -64,8 +127,11 @@ _log_job "test" artifact "build-artifacts" path "." event "✓" "Restored"
       setup_local_job "test"
 
 ACTION_FAILED=false
+# Set action-level environment variables
 
-run_action "test" "test" "/nix/store/bfcvrbfgkdq982hfkzmrgikly5lyr1zf-test/bin/test" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
+# Set retry environment variables
+
+run_action "test" "test" "/nix/store/bk3aqfwn4vrjb1pqzrbiygwcjw69dcpc-test/bin/test" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 if [ "$ACTION_FAILED" = "true" ]; then
   _log_job "test" event "✗" "Job failed due to action failures"

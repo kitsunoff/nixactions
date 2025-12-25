@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-WORKFLOW_ID="parallel-workflow-$(date +%s)-$$"
-export WORKFLOW_ID WORKFLOW_NAME="parallel-workflow"
+WORKFLOW_ID="test-env-merge-$(date +%s)-$$"
+export WORKFLOW_ID WORKFLOW_NAME="test-env-merge"
 export NIXACTIONS_LOG_FORMAT=${NIXACTIONS_LOG_FORMAT:-structured}
 
 source /nix/store/c6a8pgh4xzjl6zc1hglg5l823xfvbdr1-nixactions-logging/bin/nixactions-logging
@@ -72,87 +72,116 @@ run_provider() {
 
 
 # Apply workflow-level env (hardcoded, lowest priority)
-
+if [ -z "${LEVEL+x}" ]; then
+  export LEVEL=workflow
+fi
+if [ -z "${VAR_SHARED+x}" ]; then
+  export VAR_SHARED=workflow-value
+fi
+if [ -z "${VAR_WORKFLOW+x}" ]; then
+  export VAR_WORKFLOW=from-workflow
+fi
 
 # ============================================
 # Job Functions
 # ============================================
 
-job_analyze() {
+job_summary() {
       source /nix/store/gjwg64hal8wgjdz7mmhgdyq4c7qbqpfr-nixactions-local-executor/bin/nixactions-local-executor
 setup_local_workspace
   
-      setup_local_job "analyze"
-
+      setup_local_job "summary"
+if [ -z "${LEVEL+x}" ]; then
+  export LEVEL=workflow
+fi
+if [ -z "${VAR_SHARED+x}" ]; then
+  export VAR_SHARED=workflow-value
+fi
+if [ -z "${VAR_WORKFLOW+x}" ]; then
+  export VAR_WORKFLOW=from-workflow
+fi
 ACTION_FAILED=false
 # Set action-level environment variables
 
 # Set retry environment variables
 
-run_action "analyze" "analyze-structure" "/nix/store/2q074w7gv0y1qija10n9libvgfg2mkzh-analyze-structure/bin/analyze-structure" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
+run_action "summary" "summary" "/nix/store/lmpyzw4xafql760dji8flj9dxpgdkmv3-summary/bin/summary" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 if [ "$ACTION_FAILED" = "true" ]; then
-  _log_job "analyze" event "✗" "Job failed due to action failures"
+  _log_job "summary" event "✗" "Job failed due to action failures"
   exit 1
 fi
   
 }
 
-job_check-nix() {
+job_test-merge() {
       source /nix/store/gjwg64hal8wgjdz7mmhgdyq4c7qbqpfr-nixactions-local-executor/bin/nixactions-local-executor
 setup_local_workspace
   
-      setup_local_job "check-nix"
-
+      setup_local_job "test-merge"
+if [ -z "${LEVEL+x}" ]; then
+  export LEVEL=job
+fi
+if [ -z "${VAR_JOB+x}" ]; then
+  export VAR_JOB=from-job
+fi
+if [ -z "${VAR_SHARED+x}" ]; then
+  export VAR_SHARED=job-value
+fi
+if [ -z "${VAR_WORKFLOW+x}" ]; then
+  export VAR_WORKFLOW=from-workflow
+fi
 ACTION_FAILED=false
 # Set action-level environment variables
 
 # Set retry environment variables
 
-run_action "check-nix" "check-nix-formatting" "/nix/store/bv51v95hnlwl1lzcjnqh6jk1n2rw9w68-check-nix-formatting/bin/check-nix-formatting" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
+run_action "test-merge" "test-inheritance" "/nix/store/5ihbi4dfmi0ygibx8g693780xs2rs4a7-test-inheritance/bin/test-inheritance" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
+
+# Set action-level environment variables
+export LEVEL=action
+export VAR_ACTION=from-action
+export VAR_SHARED=action-value
+# Set retry environment variables
+
+run_action "test-merge" "test-action-override" "/nix/store/7afwra09xdcrwg6gz0i4vpjcyw33mxli-test-action-override/bin/test-action-override" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
+
+# Set action-level environment variables
+
+# Set retry environment variables
+
+run_action "test-merge" "test-runtime-priority" "/nix/store/115ja5q1hl0lhzfc4g16imvzg4cmhl68-test-runtime-priority/bin/test-runtime-priority" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 if [ "$ACTION_FAILED" = "true" ]; then
-  _log_job "check-nix" event "✗" "Job failed due to action failures"
+  _log_job "test-merge" event "✗" "Job failed due to action failures"
   exit 1
 fi
   
 }
 
-job_lint-shell() {
+job_verify-workflow-env() {
       source /nix/store/gjwg64hal8wgjdz7mmhgdyq4c7qbqpfr-nixactions-local-executor/bin/nixactions-local-executor
 setup_local_workspace
   
-      setup_local_job "lint-shell"
-
-ACTION_FAILED=false
-# Set action-level environment variables
-
-# Set retry environment variables
-
-run_action "lint-shell" "lint-shell-scripts" "/nix/store/x26nxfw66c8wy437g8kbzjk5v55m46wc-lint-shell-scripts/bin/lint-shell-scripts" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
-
-if [ "$ACTION_FAILED" = "true" ]; then
-  _log_job "lint-shell" event "✗" "Job failed due to action failures"
-  exit 1
+      setup_local_job "verify-workflow-env"
+if [ -z "${LEVEL+x}" ]; then
+  export LEVEL=workflow
 fi
-  
-}
-
-job_report() {
-      source /nix/store/gjwg64hal8wgjdz7mmhgdyq4c7qbqpfr-nixactions-local-executor/bin/nixactions-local-executor
-setup_local_workspace
-  
-      setup_local_job "report"
-
+if [ -z "${VAR_SHARED+x}" ]; then
+  export VAR_SHARED=workflow-value
+fi
+if [ -z "${VAR_WORKFLOW+x}" ]; then
+  export VAR_WORKFLOW=from-workflow
+fi
 ACTION_FAILED=false
 # Set action-level environment variables
 
 # Set retry environment variables
 
-run_action "report" "final-report" "/nix/store/qsk5w9hb7rxzz86r3r1fsqvy3nb1skpv-final-report/bin/final-report" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
+run_action "verify-workflow-env" "verify-shared" "/nix/store/gfb9sx6dc81r3ps1yai589a9kv5imix8-verify-shared/bin/verify-shared" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 if [ "$ACTION_FAILED" = "true" ]; then
-  _log_job "report" event "✗" "Job failed due to action failures"
+  _log_job "verify-workflow-env" event "✗" "Job failed due to action failures"
   exit 1
 fi
   
@@ -160,16 +189,22 @@ fi
 
 
 main() {
-  _log_workflow levels 2 event "▶" "Workflow starting"
-  _log_workflow level 0 jobs "analyze, check-nix, lint-shell" event "→" "Starting level"
-run_parallel "analyze|success()|" "check-nix|success()|" "lint-shell|success()|" || {
+  _log_workflow levels 3 event "▶" "Workflow starting"
+  _log_workflow level 0 jobs "test-merge" event "→" "Starting level"
+run_parallel "test-merge|success()|" || {
   _log_workflow level 0 event "✗" "Level failed"
   exit 1
 }
 
-_log_workflow level 1 jobs "report" event "→" "Starting level"
-run_parallel "report|success()|" || {
+_log_workflow level 1 jobs "verify-workflow-env" event "→" "Starting level"
+run_parallel "verify-workflow-env|success()|" || {
   _log_workflow level 1 event "✗" "Level failed"
+  exit 1
+}
+
+_log_workflow level 2 jobs "summary" event "→" "Starting level"
+run_parallel "summary|success()|" || {
+  _log_workflow level 2 event "✗" "Level failed"
   exit 1
 }
 

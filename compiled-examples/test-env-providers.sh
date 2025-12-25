@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-WORKFLOW_ID="parallel-workflow-$(date +%s)-$$"
-export WORKFLOW_ID WORKFLOW_NAME="parallel-workflow"
+WORKFLOW_ID="test-env-providers-$(date +%s)-$$"
+export WORKFLOW_ID WORKFLOW_NAME="test-env-providers"
 export NIXACTIONS_LOG_FORMAT=${NIXACTIONS_LOG_FORMAT:-structured}
 
 source /nix/store/c6a8pgh4xzjl6zc1hglg5l823xfvbdr1-nixactions-logging/bin/nixactions-logging
@@ -69,90 +69,104 @@ run_provider() {
 }
 
 # Execute envFrom providers in order
+# Capture runtime environment keys (highest priority)
+RUNTIME_ENV_KEYS=$(compgen -e | tr '\n' ' ')
+
+_log_workflow event "→" "Loading environment from providers"
+run_provider "/nix/store/fhqm3a9y2cc5r7sp07qxsip7wsylix2z-env-provider-static/bin/$(ls /nix/store/fhqm3a9y2cc5r7sp07qxsip7wsylix2z-env-provider-static/bin | head -1)"
+
+run_provider "/nix/store/jyj04kbx8yh8f82kvnpq59jqaprafabz-env-provider-file/bin/$(ls /nix/store/jyj04kbx8yh8f82kvnpq59jqaprafabz-env-provider-file/bin | head -1)"
+
+run_provider "/nix/store/j2i5ln0nfd3yg7wapb6hsi6ighaq7nz9-env-provider-required/bin/$(ls /nix/store/j2i5ln0nfd3yg7wapb6hsi6ighaq7nz9-env-provider-required/bin | head -1)"
+
+_log_workflow event "✓" "Environment loaded"
 
 
 # Apply workflow-level env (hardcoded, lowest priority)
-
+if [ -z "${SHARED_VAR+x}" ]; then
+  export SHARED_VAR=workflow_priority
+fi
+if [ -z "${WORKFLOW_VAR+x}" ]; then
+  export WORKFLOW_VAR=from_workflow
+fi
 
 # ============================================
 # Job Functions
 # ============================================
 
-job_analyze() {
+job_test-priority() {
       source /nix/store/gjwg64hal8wgjdz7mmhgdyq4c7qbqpfr-nixactions-local-executor/bin/nixactions-local-executor
 setup_local_workspace
   
-      setup_local_job "analyze"
-
+      setup_local_job "test-priority"
+if [ -z "${SHARED_VAR+x}" ]; then
+  export SHARED_VAR=workflow_priority
+fi
+if [ -z "${WORKFLOW_VAR+x}" ]; then
+  export WORKFLOW_VAR=from_workflow
+fi
 ACTION_FAILED=false
 # Set action-level environment variables
 
 # Set retry environment variables
 
-run_action "analyze" "analyze-structure" "/nix/store/2q074w7gv0y1qija10n9libvgfg2mkzh-analyze-structure/bin/analyze-structure" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
+run_action "test-priority" "show-environment" "/nix/store/ivqcva0ajfi87p0xg8h62mi629swqqcn-show-environment/bin/show-environment" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 if [ "$ACTION_FAILED" = "true" ]; then
-  _log_job "analyze" event "✗" "Job failed due to action failures"
+  _log_job "test-priority" event "✗" "Job failed due to action failures"
   exit 1
 fi
   
 }
 
-job_check-nix() {
+job_test-required() {
       source /nix/store/gjwg64hal8wgjdz7mmhgdyq4c7qbqpfr-nixactions-local-executor/bin/nixactions-local-executor
 setup_local_workspace
   
-      setup_local_job "check-nix"
-
+      setup_local_job "test-required"
+if [ -z "${SHARED_VAR+x}" ]; then
+  export SHARED_VAR=workflow_priority
+fi
+if [ -z "${WORKFLOW_VAR+x}" ]; then
+  export WORKFLOW_VAR=from_workflow
+fi
 ACTION_FAILED=false
 # Set action-level environment variables
 
 # Set retry environment variables
 
-run_action "check-nix" "check-nix-formatting" "/nix/store/bv51v95hnlwl1lzcjnqh6jk1n2rw9w68-check-nix-formatting/bin/check-nix-formatting" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
+run_action "test-required" "test-required-validation" "/nix/store/v01dxvljfl2j3y0ksab0k7rsd736zr88-test-required-validation/bin/test-required-validation" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 if [ "$ACTION_FAILED" = "true" ]; then
-  _log_job "check-nix" event "✗" "Job failed due to action failures"
+  _log_job "test-required" event "✗" "Job failed due to action failures"
   exit 1
 fi
   
 }
 
-job_lint-shell() {
+job_test-runtime-override() {
       source /nix/store/gjwg64hal8wgjdz7mmhgdyq4c7qbqpfr-nixactions-local-executor/bin/nixactions-local-executor
 setup_local_workspace
   
-      setup_local_job "lint-shell"
-
-ACTION_FAILED=false
-# Set action-level environment variables
-
-# Set retry environment variables
-
-run_action "lint-shell" "lint-shell-scripts" "/nix/store/x26nxfw66c8wy437g8kbzjk5v55m46wc-lint-shell-scripts/bin/lint-shell-scripts" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
-
-if [ "$ACTION_FAILED" = "true" ]; then
-  _log_job "lint-shell" event "✗" "Job failed due to action failures"
-  exit 1
+      setup_local_job "test-runtime-override"
+if [ -z "${JOB_VAR+x}" ]; then
+  export JOB_VAR=from_job
 fi
-  
-}
-
-job_report() {
-      source /nix/store/gjwg64hal8wgjdz7mmhgdyq4c7qbqpfr-nixactions-local-executor/bin/nixactions-local-executor
-setup_local_workspace
-  
-      setup_local_job "report"
-
+if [ -z "${SHARED_VAR+x}" ]; then
+  export SHARED_VAR=should_be_file_priority
+fi
+if [ -z "${WORKFLOW_VAR+x}" ]; then
+  export WORKFLOW_VAR=from_workflow
+fi
 ACTION_FAILED=false
 # Set action-level environment variables
 
 # Set retry environment variables
 
-run_action "report" "final-report" "/nix/store/qsk5w9hb7rxzz86r3r1fsqvy3nb1skpv-final-report/bin/final-report" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
+run_action "test-runtime-override" "test-job-env" "/nix/store/i9nb1rqpj5fqnai43fzphh8pjlr5fp9f-test-job-env/bin/test-job-env" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 if [ "$ACTION_FAILED" = "true" ]; then
-  _log_job "report" event "✗" "Job failed due to action failures"
+  _log_job "test-runtime-override" event "✗" "Job failed due to action failures"
   exit 1
 fi
   
@@ -160,16 +174,22 @@ fi
 
 
 main() {
-  _log_workflow levels 2 event "▶" "Workflow starting"
-  _log_workflow level 0 jobs "analyze, check-nix, lint-shell" event "→" "Starting level"
-run_parallel "analyze|success()|" "check-nix|success()|" "lint-shell|success()|" || {
+  _log_workflow levels 3 event "▶" "Workflow starting"
+  _log_workflow level 0 jobs "test-priority" event "→" "Starting level"
+run_parallel "test-priority|success()|" || {
   _log_workflow level 0 event "✗" "Level failed"
   exit 1
 }
 
-_log_workflow level 1 jobs "report" event "→" "Starting level"
-run_parallel "report|success()|" || {
+_log_workflow level 1 jobs "test-required" event "→" "Starting level"
+run_parallel "test-required|success()|" || {
   _log_workflow level 1 event "✗" "Level failed"
+  exit 1
+}
+
+_log_workflow level 2 jobs "test-runtime-override" event "→" "Starting level"
+run_parallel "test-runtime-override|success()|" || {
+  _log_workflow level 2 event "✗" "Level failed"
   exit 1
 }
 

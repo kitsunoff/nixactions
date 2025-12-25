@@ -5,7 +5,7 @@ WORKFLOW_ID="example-retry-$(date +%s)-$$"
 export WORKFLOW_ID WORKFLOW_NAME="example-retry"
 export NIXACTIONS_LOG_FORMAT=${NIXACTIONS_LOG_FORMAT:-structured}
 
-source /nix/store/p95kzip1952gbhfggns20djl5fwgs5sk-nixactions-logging/bin/nixactions-logging
+source /nix/store/c6a8pgh4xzjl6zc1hglg5l823xfvbdr1-nixactions-logging/bin/nixactions-logging
 source /nix/store/2r76x2y7xbsx2fhfhkxrxszpckydci7y-nixactions-retry/bin/nixactions-retry
 source /nix/store/1mgqdp33xiddrm2va94abw7l8wdvzz0q-nixactions-runtime/bin/nixactions-runtime
 
@@ -18,6 +18,66 @@ FAILED_JOBS=()
 WORKFLOW_CANCELLED=false
 trap 'WORKFLOW_CANCELLED=true; echo "⊘ Workflow cancelled"; exit 130' SIGINT SIGTERM
 
+# ============================================
+# Environment Provider Execution
+# ============================================
+
+# Helper: Execute provider and apply exports
+run_provider() {
+  local provider=$1
+  local provider_name=$(basename "$provider")
+  
+  _log_workflow provider "$provider_name" event "→" "Loading environment"
+  
+  # Execute provider, capture output
+  local output
+  if ! output=$("$provider" 2>&1); then
+    local exit_code=$?
+    _log_workflow provider "$provider_name" event "✗" "Provider failed (exit $exit_code)"
+    echo "$output" >&2
+    exit $exit_code
+  fi
+  
+  # Apply exports - providers always override previous values
+  # Runtime environment (already in shell) has highest priority
+  local vars_set=0
+  local vars_from_runtime=0
+  
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^export[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)= ]]; then
+      local key="${BASH_REMATCH[1]}"
+      
+      # Check if variable was set from runtime (before provider execution started)
+      # We detect this by checking if it's in our RUNTIME_ENV_KEYS list
+      if [[ " ${RUNTIME_ENV_KEYS} " =~ " ${key} " ]]; then
+        # Runtime env has highest priority - skip
+        vars_from_runtime=$((vars_from_runtime + 1))
+      else
+        # Apply provider value (may override previous provider)
+        eval "$line"
+        vars_set=$((vars_set + 1))
+      fi
+    fi
+  done <<< "$output"
+  
+  if [ $vars_set -gt 0 ]; then
+    _log_workflow provider "$provider_name" vars_set "$vars_set" event "✓" "Variables loaded"
+  fi
+  if [ $vars_from_runtime -gt 0 ]; then
+    _log_workflow provider "$provider_name" vars_from_runtime "$vars_from_runtime" event "⊘" "Variables skipped (runtime override)"
+  fi
+}
+
+# Execute envFrom providers in order
+
+
+# Apply workflow-level env (hardcoded, lowest priority)
+
+
+# ============================================
+# Job Functions
+# ============================================
+
 job_test-constant() {
       source /nix/store/gjwg64hal8wgjdz7mmhgdyq4c7qbqpfr-nixactions-local-executor/bin/nixactions-local-executor
 setup_local_workspace
@@ -25,11 +85,14 @@ setup_local_workspace
       setup_local_job "test-constant"
 
 ACTION_FAILED=false
+# Set action-level environment variables
+
+# Set retry environment variables
 export RETRY_BACKOFF=constant
 export RETRY_MAX_ATTEMPTS=3
 export RETRY_MAX_TIME=3
 export RETRY_MIN_TIME=3
-run_action "test-constant" "constant-backoff" "/nix/store/qjfppfxn6lbzji2qc3si9fb96i7krvh8-constant-backoff/bin/constant-backoff" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
+run_action "test-constant" "constant-backoff" "/nix/store/ym9q7pf7576zaz0lb7g43l0x0lsy16cb-constant-backoff/bin/constant-backoff" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 if [ "$ACTION_FAILED" = "true" ]; then
   _log_job "test-constant" event "✗" "Job failed due to action failures"
@@ -45,11 +108,14 @@ setup_local_workspace
       setup_local_job "test-exponential"
 
 ACTION_FAILED=false
+# Set action-level environment variables
+
+# Set retry environment variables
 export RETRY_BACKOFF=exponential
 export RETRY_MAX_ATTEMPTS=3
 export RETRY_MAX_TIME=60
 export RETRY_MIN_TIME=1
-run_action "test-exponential" "fail-twice-then-succeed" "/nix/store/8j3fsfdi49isfdrzgazpvmk9k2b50nxk-fail-twice-then-succeed/bin/fail-twice-then-succeed" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
+run_action "test-exponential" "fail-twice-then-succeed" "/nix/store/307q3sdp3wgw03kp0xd59jyfmc4ch122-fail-twice-then-succeed/bin/fail-twice-then-succeed" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 if [ "$ACTION_FAILED" = "true" ]; then
   _log_job "test-exponential" event "✗" "Job failed due to action failures"
@@ -65,11 +131,14 @@ setup_local_workspace
       setup_local_job "test-linear"
 
 ACTION_FAILED=false
+# Set action-level environment variables
+
+# Set retry environment variables
 export RETRY_BACKOFF=linear
 export RETRY_MAX_ATTEMPTS=3
 export RETRY_MAX_TIME=10
 export RETRY_MIN_TIME=2
-run_action "test-linear" "fail-once-with-linear-backoff" "/nix/store/kyzl0zsfyxl5qq4jpr732glfl9wjxxra-fail-once-with-linear-backoff/bin/fail-once-with-linear-backoff" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
+run_action "test-linear" "fail-once-with-linear-backoff" "/nix/store/pha8jmrc9wgxdvapizmn89l7da1ngdv6-fail-once-with-linear-backoff/bin/fail-once-with-linear-backoff" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 if [ "$ACTION_FAILED" = "true" ]; then
   _log_job "test-linear" event "✗" "Job failed due to action failures"
@@ -85,8 +154,11 @@ setup_local_workspace
       setup_local_job "test-max-attempts-one"
 
 ACTION_FAILED=false
+# Set action-level environment variables
 
-run_action "test-max-attempts-one" "single-attempt" "/nix/store/r8qaf38fklypwl2c0yga3kcckm2h0n8g-single-attempt/bin/single-attempt" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
+# Set retry environment variables
+
+run_action "test-max-attempts-one" "single-attempt" "/nix/store/x37s7zmklin84nvcpfb2gykf7fxa4qxi-single-attempt/bin/single-attempt" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 if [ "$ACTION_FAILED" = "true" ]; then
   _log_job "test-max-attempts-one" event "✗" "Job failed due to action failures"
@@ -102,11 +174,14 @@ setup_local_workspace
       setup_local_job "test-no-retry"
 
 ACTION_FAILED=false
+# Set action-level environment variables
+
+# Set retry environment variables
 export RETRY_BACKOFF=exponential
 export RETRY_MAX_ATTEMPTS=2
 export RETRY_MAX_TIME=30
 export RETRY_MIN_TIME=1
-run_action "test-no-retry" "no-retry-success" "/nix/store/qdnl91i5rj7kb1hpwa00fbqlqrzsmjjk-no-retry-success/bin/no-retry-success" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
+run_action "test-no-retry" "no-retry-success" "/nix/store/3326xbx301xida810w0dyifh5rnl8js1-no-retry-success/bin/no-retry-success" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 if [ "$ACTION_FAILED" = "true" ]; then
   _log_job "test-no-retry" event "✗" "Job failed due to action failures"
