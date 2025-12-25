@@ -335,20 +335,11 @@ Job :: {
   
   # Environment (runtime values)
   env :: AttrSet String = {},
-  envFrom :: [EnvSource] = [],
+  envFrom :: [Derivation] = [],  # Environment provider derivations
   
   # Artifacts
   inputs  :: [String | { name :: String, path :: String }] = [],  # Artifacts to restore (simple or with custom path)
   outputs :: AttrSet String = {},                                   # Artifacts to save
-}
-
-EnvSource :: 
-  | { file :: Path, required :: Bool = false }
-  | { sops :: { file :: Path, format :: "yaml" | "json" | "dotenv" }, required :: Bool = true }
-  | { vault :: { path :: String, addr :: String }, required :: Bool = true }
-  | { onepassword :: { vault :: String, item :: String }, required :: Bool = false }
-  | { age :: { file :: Path, identity :: Path }, required :: Bool = true }
-  | { bitwarden :: { itemId :: String }, required :: Bool = false }
 }
 ```
 
@@ -414,7 +405,7 @@ WorkflowConfig :: {
   name    :: String,
   jobs    :: AttrSet Job,
   env     :: AttrSet String = {},
-  envFrom :: [EnvSource] = [],
+  envFrom :: [Derivation] = {},  # Environment provider derivations
 }
 ```
 
@@ -1584,110 +1575,193 @@ nix run .#test-retry-comprehensive
 
 ### Philosophy
 
-**Environment variables in NixActions are managed at runtime, never at build time.**
+**Environment variables in NixActions are managed through executable provider derivations.**
 
 **Core principles:**
-1. 🔒 **Secrets never in /nix/store** - Values loaded at runtime only
+1. 🔒 **Secrets never in /nix/store** - Providers are executables, not values
 2. 🎯 **Executor-agnostic** - Works across local, OCI, SSH, K8s executors
-3. 📦 **Multi-source** - Load from files, secret managers, CLI, or config
+3. 📦 **Multi-source** - Providers for files, secret managers, CLI, or config
 4. 🔄 **Immutable** - Loaded once at workflow start, shared across jobs
-5. ✅ **Validated** - Required variables checked before execution
+5. ✅ **Validated** - Provider derivations can fail if requirements not met
+6. 🔁 **Reusable** - Providers are derivations, can be shared and tested
 
 **Key design:**
-- Build time: Only paths/references, no values
-- Runtime: Load all env vars at workflow start
-- Executors: Receive pre-populated environment to inject into execution context
+- **Build time**: Providers compiled to `/nix/store` as executables
+- **Runtime**: Execute providers, capture output, apply to environment
+- **Output format**: `export KEY="value"` (bash-compatible)
+- **Executors**: Receive pre-populated environment to inject into execution context
+
+**Provider = Derivation that outputs environment variables when executed**
 
 ---
 
-### Environment Sources
+### Environment Providers
 
-Environment variables can come from multiple sources with clear precedence.
+Environment providers are **executable derivations** that output `export` statements.
 
-#### Source Types
+#### Provider Type
 
 ```nix
-# 1. Direct env vars (workflow/job/action config)
-env = {
+Provider :: Derivation {
+  type = "derivation";
+  outputPath = "/nix/store/xxx-provider-name";
+  
+  # When executed:
+  # $ /nix/store/xxx-provider-name
+  # → stdout: export API_KEY="secret123"
+  #           export DB_URL="postgres://localhost/db"
+}
+```
+
+#### Built-in Providers
+
+```nix
+# 1. File provider - load from .env file
+platform.providers.file {
+  path = ".env.production";
+  required ? false;  # Exit 1 if file not found
+}
+# → /nix/store/xxx-file-provider
+# Execution: Reads file, outputs export statements
+
+# 2. SOPS provider - decrypt SOPS file
+platform.providers.sops {
+  file = ./secrets/prod.sops.yaml;
+  format ? "yaml";  # yaml | json | dotenv
+  required ? true;
+}
+# → /nix/store/yyy-sops-provider
+# Execution: sops -d file | convert to exports
+
+# 3. Vault provider - fetch from HashiCorp Vault
+platform.providers.vault {
+  path = "secret/data/production";
+  addr ? null;  # Uses $VAULT_ADDR if not specified
+  required ? true;
+}
+# → /nix/store/zzz-vault-provider
+# Execution: vault kv get path | convert to exports
+
+# 4. 1Password provider
+platform.providers.onepassword {
+  vault = "Production";
+  item = "API Keys";
+  required ? false;
+}
+# → /nix/store/aaa-1password-provider
+
+# 5. Age provider - decrypt age file
+platform.providers.age {
+  file = ./secrets.age;
+  identity = ./keys/age-key.txt;
+  required ? true;
+}
+# → /nix/store/bbb-age-provider
+
+# 6. Bitwarden provider
+platform.providers.bitwarden {
+  itemId = "xxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx";
+  required ? false;
+}
+# → /nix/store/ccc-bitwarden-provider
+
+# 7. Required env validator
+platform.providers.required [
+  "API_KEY"
+  "DATABASE_URL"
+  "DEPLOY_TOKEN"
+]
+# → /nix/store/ddd-required-provider
+# Execution: Check if vars exist, exit 1 if missing
+
+# 8. Static env provider (for hardcoded values)
+platform.providers.static {
   CI = "true";
   NODE_ENV = "production";
 }
+# → /nix/store/eee-static-provider
+# Execution: Output predefined exports
+```
 
-# 2. Environment providers (envFrom)
-envFrom = [
-  # File provider
-  {
-    file = ".env.production";
-    required = true;  # Fail if file missing (default: false)
-  }
+#### Usage
+
+```nix
+platform.mkWorkflow {
+  name = "ci";
   
-  # SOPS provider
-  {
-    sops = {
-      file = ./secrets/prod.sops.yaml;
-      format = "yaml";  # yaml | json | dotenv
+  # Direct env vars (inline)
+  env = {
+    CI = "true";
+    WORKFLOW_NAME = "ci";
+  };
+  
+  # Provider derivations
+  envFrom = [
+    # Load common config
+    (platform.providers.file {
+      path = ".env.common";
+      required = false;
+    })
+    
+    # Load production secrets from SOPS
+    (platform.providers.sops {
+      file = ./secrets/production.sops.yaml;
+      format = "yaml";
+      required = true;
+    })
+    
+    # Load API keys from Vault
+    (platform.providers.vault {
+      path = "secret/data/api/production";
+      required = true;
+    })
+    
+    # Validate required variables
+    (platform.providers.required [
+      "API_KEY"
+      "DATABASE_URL"
+    ])
+  ];
+  
+  jobs = {
+    deploy = {
+      # Job can have additional providers
+      envFrom = [
+        (platform.providers.file {
+          path = ".env.deploy";
+          required = false;
+        })
+      ];
+      
+      actions = [...];
     };
-    required = true;
-  }
-  
-  # Vault provider
-  {
-    vault = {
-      path = "secret/data/production";
-      addr = "https://vault.example.com";
-    };
-    required = true;
-  }
-  
-  # 1Password provider
-  {
-    onepassword = {
-      vault = "Production";
-      item = "API Keys";
-    };
-    required = false;
-  }
-  
-  # Age encrypted file
-  {
-    age = {
-      file = ./secrets.age;
-      identity = ./keys/age-key.txt;
-    };
-    required = true;
-  }
-  
-  # Bitwarden provider
-  {
-    bitwarden = {
-      itemId = "xxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx";
-    };
-    required = false;
-  }
-  
-  # CLI env file (passed at runtime)
-  # nix run .#ci -- --env-file .env.override
-]
+  };
+}
 ```
 
 #### Precedence Order (highest to lowest)
 
 ```
 Build time (Nix evaluation):
-  - Only PATHS/REFERENCES stored, no values
+  - Providers compiled to /nix/store as executables
+  - env config embedded in workflow derivation
+  - No secret values in derivations
 
 Runtime (workflow execution):
-  1. Runtime CLI:         API_KEY=secret nix run .#ci
+  1. Runtime CLI env:     API_KEY=secret nix run .#ci
   2. CLI --env-file:      nix run .#ci -- --env-file .env.override
   3. Action env:          action.env = { KEY = "value"; }
-  4. Action envFrom:      action.envFrom = [{ file = ".env.action"; }]
+  4. Action envFrom:      Providers executed in order
   5. Job env:             job.env = { KEY = "value"; }
-  6. Job envFrom:         job.envFrom = [{ file = ".env.job"; }]
+  6. Job envFrom:         Providers executed in order
   7. Workflow env:        workflow.env = { KEY = "value"; }
-  8. Workflow envFrom:    workflow.envFrom = [{ file = ".env.workflow"; }]
+  8. Workflow envFrom:    Providers executed in order
 ```
 
-**Note:** Later sources (lower priority) only set variables that aren't already set.
+**Key points:**
+- Providers executed in array order (first provider = highest priority in that level)
+- Variables set by earlier sources skip later providers
+- Providers can fail (exit 1) if required resources missing
 
 ---
 
@@ -1695,7 +1769,7 @@ Runtime (workflow execution):
 
 All environment variables are loaded **once** at the beginning of workflow execution and become **immutable** for the entire workflow run.
 
-#### Load Sequence
+#### Provider Execution Model
 
 ```bash
 # Generated workflow script (runtime)
@@ -1704,150 +1778,7 @@ All environment variables are loaded **once** at the beginning of workflow execu
 set -euo pipefail
 
 # ============================================
-# Phase 1: Load all environment sources
-# ============================================
-
-# Helper: Load .env file
-load_env_file() {
-  local file=$1
-  local required=${2:-false}
-  
-  if [ ! -f "$file" ]; then
-    if [ "$required" = "true" ]; then
-      echo "Error: Required env file not found: $file" >&2
-      exit 1
-    fi
-    return 0
-  fi
-  
-  echo "→ Loading env from: $file"
-  while IFS= read -r line || [ -n "$line" ]; do
-    [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
-    if [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
-      local key="${BASH_REMATCH[1]}"
-      local value="${BASH_REMATCH[2]}"
-      
-      # Remove quotes
-      if [[ "$value" =~ ^\"(.*)\"$ ]] || [[ "$value" =~ ^\'(.*)\'$ ]]; then
-        value="${BASH_REMATCH[1]}"
-      fi
-      
-      # Only set if not already set (priority)
-      if [ -z "${!key+x}" ]; then
-        export "$key=$value"
-        echo "  ✓ $key"
-      else
-        echo "  ⊘ $key (already set, skipping)"
-      fi
-    fi
-  done < "$file"
-}
-
-# Helper: Load from SOPS
-load_sops() {
-  local file=$1
-  local format=$2
-  local required=${3:-false}
-  
-  if [ ! -f "$file" ]; then
-    if [ "$required" = "true" ]; then
-      echo "Error: Required SOPS file not found: $file" >&2
-      exit 1
-    fi
-    return 0
-  fi
-  
-  echo "→ Loading secrets from SOPS: $file"
-  
-  case "$format" in
-    yaml)
-      eval $(sops -d "$file" | yq -r 'to_entries | .[] | "export \(.key)=\(.value | @sh)"')
-      ;;
-    json)
-      eval $(sops -d "$file" | jq -r 'to_entries | .[] | "export \(.key)=\(.value | @sh)"')
-      ;;
-    dotenv)
-      export $(sops -d "$file" | xargs)
-      ;;
-  esac
-  
-  echo "  ✓ Loaded SOPS secrets"
-}
-
-# Helper: Load from Vault
-load_vault() {
-  local path=$1
-  local addr=$2
-  local required=${3:-false}
-  
-  echo "→ Loading secrets from Vault: $path"
-  
-  export VAULT_ADDR="${addr:-${VAULT_ADDR:-}}"
-  
-  if [ -z "$VAULT_ADDR" ]; then
-    if [ "$required" = "true" ]; then
-      echo "Error: VAULT_ADDR not set" >&2
-      exit 1
-    fi
-    return 0
-  fi
-  
-  # Authenticate (expects VAULT_TOKEN in env)
-  if ! vault token lookup >/dev/null 2>&1; then
-    if [ "$required" = "true" ]; then
-      echo "Error: Vault authentication failed" >&2
-      exit 1
-    fi
-    return 0
-  fi
-  
-  # Read secrets
-  eval $(vault kv get -format=json "$path" | jq -r '.data.data | to_entries | .[] | "export \(.key)=\(.value | @sh)"')
-  
-  echo "  ✓ Loaded Vault secrets"
-}
-
-# Helper: Load from 1Password
-load_onepassword() {
-  local vault=$1
-  local item=$2
-  local required=${3:-false}
-  
-  echo "→ Loading secrets from 1Password: $vault/$item"
-  
-  if ! command -v op >/dev/null 2>&1; then
-    if [ "$required" = "true" ]; then
-      echo "Error: 1Password CLI (op) not found" >&2
-      exit 1
-    fi
-    return 0
-  fi
-  
-  # Read item fields as env vars
-  eval $(op item get "$item" --vault "$vault" --format json | jq -r '.fields[] | select(.type == "concealed" or .type == "string") | "export \(.label | ascii_upcase | gsub("[^A-Z0-9_]"; "_"))=\(.value | @sh)"')
-  
-  echo "  ✓ Loaded 1Password secrets"
-}
-
-# Helper: Validate required env vars
-require_env() {
-  local missing=()
-  
-  for var in "$@"; do
-    if [ -z "${!var+x}" ]; then
-      missing+=("$var")
-    fi
-  done
-  
-  if [ ${#missing[@]} -gt 0 ]; then
-    echo "Error: Required environment variables not set:" >&2
-    printf '  - %s\n' "${missing[@]}" >&2
-    exit 1
-  fi
-}
-
-# ============================================
-# Load environment (in priority order)
+# Phase 1: Execute environment providers
 # ============================================
 
 echo "╔════════════════════════════════════════╗"
@@ -1855,21 +1786,73 @@ echo "║ Loading Environment                    ║"
 echo "╚════════════════════════════════════════╝"
 echo ""
 
+# Helper: Execute provider and apply exports
+run_provider() {
+  local provider=$1
+  local provider_name=$(basename "$provider")
+  
+  echo "→ Running provider: $provider_name"
+  
+  # Execute provider, capture output
+  local output
+  if ! output=$("$provider" 2>&1); then
+    local exit_code=$?
+    echo "  ✗ Provider failed (exit $exit_code)" >&2
+    echo "$output" >&2
+    exit $exit_code
+  fi
+  
+  # Apply exports (only if not already set - respects priority)
+  local vars_set=0
+  local vars_skipped=0
+  
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^export[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)= ]]; then
+      local key="${BASH_REMATCH[1]}"
+      
+      if [ -z "${!key+x}" ]; then
+        # Variable not set - apply it
+        eval "$line"
+        vars_set=$((vars_set + 1))
+      else
+        # Already set - skip (higher priority source)
+        vars_skipped=$((vars_skipped + 1))
+      fi
+    fi
+  done <<< "$output"
+  
+  if [ $vars_set -gt 0 ]; then
+    echo "  ✓ Set $vars_set variables"
+  fi
+  if [ $vars_skipped -gt 0 ]; then
+    echo "  ⊘ Skipped $vars_skipped variables (already set)"
+  fi
+}
+
+# ============================================
+# Execute providers in priority order
+# ============================================
+
 # CLI args and runtime env already in environment (highest priority)
 
-# Workflow envFrom (lowest priority - load first)
-load_env_file ".env.common" false
-load_sops "secrets/common.sops.yaml" "yaml" false
+# Workflow envFrom providers (execute in order)
+${lib.concatMapStringsSep "\n" (provider: ''
+run_provider "${provider}"
+'') workflowProviders}
 
-# Workflow env (hardcoded from config)
-export CI="true"
-export WORKFLOW_NAME="ci"
-
-# Validate workflow-level required vars
-# require_env "VAULT_ADDR" "VAULT_TOKEN"
+# Workflow env (inline, hardcoded from config)
+${lib.concatStringsSep "\n" (
+  lib.mapAttrsToList (k: v: 
+    ''
+    if [ -z "''${${k}+x}" ]; then
+      export ${k}=${lib.escapeShellArg (toString v)}
+    fi
+    ''
+  ) workflowEnv
+)}
 
 echo ""
-echo "✓ Environment loaded"
+echo "✓ Environment loaded and validated"
 echo ""
 
 # ============================================
@@ -1880,11 +1863,34 @@ echo ""
 # All jobs share the same environment
 ```
 
+#### Provider Output Format
+
+All providers must output valid bash `export` statements:
+
+```bash
+# Valid provider output
+export API_KEY="secret123"
+export DATABASE_URL="postgres://localhost:5432/mydb"
+export NODE_ENV="production"
+
+# Invalid - will be ignored
+API_KEY=secret  # Missing 'export'
+export invalid syntax  # Invalid format
+echo "Setting vars"  # Not an export
+```
+
+**Rules:**
+- One `export` per line
+- Use proper quoting for values with spaces/special chars
+- Exit code 0 = success, non-zero = failure
+- Stderr logged, stdout parsed for exports
+- Empty output is valid (provider has nothing to contribute)
+
 ---
 
 ### Multi-level Environment Configuration
 
-Environment can be configured at workflow, job, and action levels.
+Environment can be configured at workflow, job, and action levels using provider derivations.
 
 #### Example: Complete Environment Setup
 
@@ -1892,28 +1898,32 @@ Environment can be configured at workflow, job, and action levels.
 platform.mkWorkflow {
   name = "production-deployment";
   
-  # Workflow-level environment
+  # Workflow-level environment (inline values)
   env = {
     CI = "true";
     ENVIRONMENT = "production";
   };
   
-  # Workflow-level providers
+  # Workflow-level providers (derivations)
   envFrom = [
-    # Common config for all jobs
-    {
-      file = ".env.common";
+    # Load common config from file
+    (platform.providers.file {
+      path = ".env.common";
       required = false;
-    }
+    })
     
-    # Shared secrets (SOPS)
-    {
-      sops = {
-        file = ./secrets/common.sops.yaml;
-        format = "yaml";
-      };
+    # Load shared secrets from SOPS
+    (platform.providers.sops {
+      file = ./secrets/common.sops.yaml;
+      format = "yaml";
       required = true;
-    }
+    })
+    
+    # Validate that basic vars are set
+    (platform.providers.required [
+      "VAULT_ADDR"
+      "VAULT_TOKEN"
+    ])
   ];
   
   jobs = {
@@ -1926,26 +1936,28 @@ platform.mkWorkflow {
         PORT = "3000";
       };
       
-      # Job-level providers
+      # Job-level providers (executed after workflow providers)
       envFrom = [
         # API-specific config
-        {
-          file = ".env.api";
+        (platform.providers.file {
+          path = ".env.api";
           required = false;
-        }
+        })
         
         # API secrets from Vault
-        {
-          vault = {
-            path = "secret/data/api/production";
-            addr = "https://vault.example.com";
-          };
+        (platform.providers.vault {
+          path = "secret/data/api/production";
           required = true;
-        }
+        })
+        
+        # Validate API-specific vars
+        (platform.providers.required [
+          "API_KEY"
+          "DATABASE_URL"
+        ])
       ];
       
       actions = [
-        # Validate required variables before deployment
         {
           name = "validate-env";
           bash = ''
@@ -1956,10 +1968,7 @@ platform.mkWorkflow {
             echo "  SERVICE=$SERVICE"
             echo "  PORT=$PORT"
             echo "  API_KEY=***" # Secret from Vault
-            
-            # Validate required vars
-            : "''${API_KEY:?API_KEY is required}"
-            : "''${DATABASE_URL:?DATABASE_URL is required}"
+            echo "  DATABASE_URL=***"
           '';
         }
         
@@ -1971,7 +1980,7 @@ platform.mkWorkflow {
           };
           bash = ''
             echo "Deploying $SERVICE to $ENVIRONMENT"
-            echo "Using API_KEY from Vault"
+            echo "Timeout: $DEPLOY_TIMEOUT seconds"
             ./deploy.sh
           '';
         }
@@ -1988,13 +1997,11 @@ platform.mkWorkflow {
       
       envFrom = [
         # Worker-specific secrets from 1Password
-        {
-          onepassword = {
-            vault = "Production";
-            item = "Worker Secrets";
-          };
+        (platform.providers.onepassword {
+          vault = "Production";
+          item = "Worker Secrets";
           required = true;
-        }
+        })
       ];
       
       actions = [
@@ -2004,15 +2011,36 @@ platform.mkWorkflow {
             echo "Deploying $SERVICE"
             # Has access to:
             # - Workflow env (CI, ENVIRONMENT)
-            # - Workflow envFrom (common.sops.yaml)
+            # - Workflow providers (common.sops.yaml)
             # - Job env (SERVICE)
-            # - Job envFrom (1Password secrets)
+            # - Job providers (1Password secrets)
           '';
         }
       ];
     };
   };
 }
+```
+
+#### Testing Providers Standalone
+
+Since providers are derivations, they can be tested independently:
+
+```bash
+# Test SOPS provider
+$ nix build .#providers.sops-production
+$ ./result
+export API_KEY="secret123"
+export DATABASE_URL="postgres://prod.example.com/db"
+
+# Test Vault provider
+$ VAULT_TOKEN=xxx nix run .#providers.vault-api
+export API_KEY="from-vault"
+export SERVICE_TOKEN="token123"
+
+# Test required validator
+$ API_KEY=test nix run .#providers.validate-api
+# (exits 0 if all required vars present, exits 1 otherwise)
 ```
 
 ---
@@ -2088,101 +2116,212 @@ job_deploy() {
 
 ### Security Considerations
 
-1. **Never in /nix/store**
-   - Environment values only loaded at runtime
-   - Derivations contain only paths/references
-   - Secrets never cached or shared
+1. **Providers are executables, not values**
+   - Provider code stored in /nix/store (safe - just bash scripts)
+   - Secret values loaded only when provider executed
+   - Secrets never cached in /nix/store
+   - Each workflow run fetches fresh secrets
 
 2. **Temporary files**
-   - Env files created with `mktemp`
+   - Env transfer files created with `mktemp`
    - Permissions set to `0600` (owner-only)
    - Cleaned up after job execution
+   - Never written to persistent storage
 
 3. **Logging**
-   - Secret values never logged
-   - Structured logging redacts known secret patterns
+   - Provider stdout parsed, not logged
+   - Secret values never in workflow logs
+   - Structured logging redacts known patterns
    - Use `***` for sensitive values in output
 
 4. **Validation**
-   - Required variables checked before execution
+   - Required providers fail fast (exit 1)
    - Clear error messages for missing secrets
-   - Fail fast, don't expose partial state
+   - Provider failures stop workflow immediately
+   - No partial execution with missing secrets
+
+5. **Provider isolation**
+   - Providers run in clean environment
+   - No access to workflow internals
+   - Can only output export statements
+   - Failures contained, don't leak state
 
 ---
 
-### Built-in Provider Actions
+### Provider Implementation Examples
 
-For backward compatibility and simpler use cases, pre-built actions are available:
+Providers are simple bash scripts that output `export` statements.
 
-```nix
-# SOPS action
-platform.actions.sopsLoad {
-  file = ./secrets.sops.yaml;
-  format = "yaml";  # yaml | json | dotenv
-}
-
-# Vault action
-platform.actions.vaultLoad {
-  path = "secret/data/production";
-  addr = "https://vault.example.com";
-}
-
-# 1Password action
-platform.actions.opLoad {
-  vault = "Production";
-  item = "API Keys";
-}
-
-# Age decrypt action
-platform.actions.ageDecrypt {
-  file = ./secrets.age;
-  identity = ./keys/age-key.txt;
-}
-
-# Bitwarden action
-platform.actions.bwLoad {
-  itemId = "xxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx";
-}
-
-# Environment validation
-platform.actions.requireEnv [
-  "API_KEY"
-  "DATABASE_URL"
-  "DEPLOY_TOKEN"
-]
-```
-
-**Usage with actions:**
+#### File Provider
 
 ```nix
-jobs.deploy = {
-  actions = [
-    # Load secrets as first action
-    (platform.actions.sopsLoad {
-      file = ./secrets/prod.sops.yaml;
-      format = "yaml";
-    })
+# lib/providers/file.nix
+{ pkgs, lib }:
+
+{ path, required ? false }:
+
+pkgs.writeScriptBin "file-provider" ''
+  #!/usr/bin/env bash
+  set -euo pipefail
+  
+  FILE="${path}"
+  
+  if [ ! -f "$FILE" ]; then
+    ${if required then ''
+      echo "Error: Required env file not found: $FILE" >&2
+      exit 1
+    '' else ''
+      exit 0
+    ''}
+  fi
+  
+  # Read file and output exports
+  while IFS= read -r line || [ -n "$line" ]; do
+    # Skip comments and empty lines
+    [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
     
-    # Validate secrets
-    (platform.actions.requireEnv ["API_KEY" "DB_PASSWORD"])
-    
-    # Use secrets
-    {
-      name = "deploy";
-      bash = ''
-        kubectl create secret generic app \
-          --from-literal=api-key="$API_KEY"
-      '';
-    }
-  ];
-};
+    # Parse KEY=VALUE
+    if [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+      key="''${BASH_REMATCH[1]}"
+      value="''${BASH_REMATCH[2]}"
+      
+      # Remove quotes if present
+      if [[ "$value" =~ ^\"(.*)\"$ ]] || [[ "$value" =~ ^\'(.*)\'$ ]]; then
+        value="''${BASH_REMATCH[1]}"
+      fi
+      
+      # Output export
+      echo "export $key=${lib.escapeShellArg "$value"}"
+    fi
+  done < "$FILE"
+''
 ```
 
-**Note:** Using `envFrom` is preferred over action-based secret loading as it:
-- Loads secrets before any job execution
-- Validates requirements upfront
-- Provides better error messages
-- Works uniformly across all executors
+#### SOPS Provider
+
+```nix
+# lib/providers/sops.nix
+{ pkgs, lib }:
+
+{ file, format ? "yaml", required ? true }:
+
+pkgs.writeScriptBin "sops-provider" ''
+  #!/usr/bin/env bash
+  set -euo pipefail
+  
+  FILE="${file}"
+  FORMAT="${format}"
+  
+  if [ ! -f "$FILE" ]; then
+    ${if required then ''
+      echo "Error: SOPS file not found: $FILE" >&2
+      exit 1
+    '' else ''
+      exit 0
+    ''}
+  fi
+  
+  # Decrypt and convert to exports
+  case "$FORMAT" in
+    yaml)
+      ${pkgs.sops}/bin/sops -d "$FILE" | \
+        ${pkgs.yq}/bin/yq -r 'to_entries | .[] | "export \(.key)=\(.value | @sh)"'
+      ;;
+    json)
+      ${pkgs.sops}/bin/sops -d "$FILE" | \
+        ${pkgs.jq}/bin/jq -r 'to_entries | .[] | "export \(.key)=\(.value | @sh)"'
+      ;;
+    dotenv)
+      ${pkgs.sops}/bin/sops -d "$FILE" | while IFS= read -r line; do
+        [[ -z "$line" || "$line" =~ ^# ]] && continue
+        if [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+          echo "export ''${BASH_REMATCH[1]}=${lib.escapeShellArg "''${BASH_REMATCH[2]}"}"
+        fi
+      done
+      ;;
+    *)
+      echo "Error: Unknown format: $FORMAT" >&2
+      exit 1
+      ;;
+  esac
+''
+```
+
+#### Required Validator Provider
+
+```nix
+# lib/providers/required.nix
+{ pkgs, lib }:
+
+requiredVars:
+
+pkgs.writeScriptBin "required-provider" ''
+  #!/usr/bin/env bash
+  set -euo pipefail
+  
+  REQUIRED_VARS=(${lib.concatMapStringsSep " " lib.escapeShellArg requiredVars})
+  MISSING=()
+  
+  for var in "''${REQUIRED_VARS[@]}"; do
+    if [ -z "''${!var+x}" ]; then
+      MISSING+=("$var")
+    fi
+  done
+  
+  if [ ''${#MISSING[@]} -gt 0 ]; then
+    echo "Error: Required environment variables not set:" >&2
+    printf '  - %s\n' "''${MISSING[@]}" >&2
+    exit 1
+  fi
+  
+  # All required vars present - output nothing (success)
+  exit 0
+''
+```
+
+#### Vault Provider
+
+```nix
+# lib/providers/vault.nix
+{ pkgs, lib }:
+
+{ path, addr ? null, required ? true }:
+
+pkgs.writeScriptBin "vault-provider" ''
+  #!/usr/bin/env bash
+  set -euo pipefail
+  
+  PATH="${path}"
+  ${lib.optionalString (addr != null) ''
+    export VAULT_ADDR="${addr}"
+  ''}
+  
+  # Check vault CLI available
+  if ! command -v ${pkgs.vault}/bin/vault >/dev/null 2>&1; then
+    ${if required then ''
+      echo "Error: Vault CLI not available" >&2
+      exit 1
+    '' else ''
+      exit 0
+    ''}
+  fi
+  
+  # Check authentication
+  if ! ${pkgs.vault}/bin/vault token lookup >/dev/null 2>&1; then
+    ${if required then ''
+      echo "Error: Not authenticated to Vault" >&2
+      echo "Set VAULT_TOKEN environment variable" >&2
+      exit 1
+    '' else ''
+      exit 0
+    ''}
+  fi
+  
+  # Fetch secrets and convert to exports
+  ${pkgs.vault}/bin/vault kv get -format=json "$PATH" | \
+    ${pkgs.jq}/bin/jq -r '.data.data | to_entries | .[] | "export \(.key)=\(.value | @sh)"'
+''
+```
 
 ---
 
