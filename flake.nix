@@ -14,96 +14,70 @@
         inherit system;
       });
       
+      # Discover all example .nix files in a directory
+      discoverInDir = pkgs: baseDir: subDir:
+        let
+          lib = pkgs.lib;
+          fullPath = baseDir + "/${subDir}";
+          entries = builtins.readDir fullPath;
+          
+          processFile = name: type:
+            if type == "regular" && lib.hasSuffix ".nix" name then
+              let
+                baseName = lib.removeSuffix ".nix" name;
+                packageName = "example-${baseName}";
+                isTest = lib.hasPrefix "test-" baseName;
+              in
+              {
+                inherit packageName baseName isTest;
+                category = subDir;
+                path = fullPath + "/${name}";
+              }
+            else
+              null;
+          
+          results = lib.filter (x: x != null) (lib.mapAttrsToList processFile entries);
+        in
+        results;
+      
+      # Discover all examples across all categories
+      discoverAllExamples = pkgs:
+        let
+          lib = pkgs.lib;
+          categories = [ "01-basic" "02-features" "03-real-world" "99-untested" ];
+          allExamples = lib.flatten (
+            map (cat: discoverInDir pkgs ./examples cat) categories
+          );
+        in
+        allExamples;
+      
     in {
       # Main library API
       lib = forAllSystems ({ pkgs, system }: 
         import ./lib { inherit pkgs; }
       );
       
-      # Example packages
+      # Example packages (auto-discovered)
       packages = forAllSystems ({ pkgs, system }:
         let
           platform = self.lib.${system};
-        in {
-          # ===== 01-basic: Core patterns =====
+          lib = pkgs.lib;
           
-          # Example: Simple CI workflow
-          example-simple = import ./examples/01-basic/simple.nix { inherit pkgs platform; };
+          # Discover all examples
+          examples = discoverAllExamples pkgs;
           
-          # Example: Parallel workflow
-          example-parallel = import ./examples/01-basic/parallel.nix { inherit pkgs platform; };
+          # Convert to packages
+          examplePackages = builtins.listToAttrs (
+            map (ex: {
+              name = ex.packageName;
+              value = import (./examples + "/${ex.category}/${ex.baseName}.nix") { inherit pkgs platform; };
+            }) examples
+          );
           
-          # Example: Environment variable sharing between actions
-          example-env-sharing = import ./examples/01-basic/env-sharing.nix { inherit pkgs platform; };
-          
-          # ===== 02-features: Advanced capabilities =====
-          
-          # Example: Action-level conditions
-          example-test-action-conditions = import ./examples/02-features/test-action-conditions.nix { inherit pkgs platform; };
-          
-          # Example: Artifacts - comprehensive test suite (simple, custom paths, mixed)
-          example-artifacts = import ./examples/02-features/artifacts.nix { inherit pkgs platform; };
-          
-          # Example: Artifacts with nested paths
-          example-artifacts-paths = import ./examples/02-features/artifacts-paths.nix { inherit pkgs platform; };
-          
-          # Example: Secrets management
-          example-secrets = import ./examples/02-features/secrets.nix { inherit pkgs platform; };
-          
-          # Example: Dynamic package loading with nixShell
-          example-nix-shell = import ./examples/02-features/nix-shell.nix { inherit pkgs platform; };
-          
-          # Example: Multi-executor workflow (local + OCI)
-          example-multi-executor = import ./examples/02-features/multi-executor.nix { inherit pkgs platform; };
-          
-          # Example: Test environment propagation
-          example-test-env = import ./examples/02-features/test-env.nix { inherit pkgs platform; };
-          
-          # Example: Test job isolation
-          example-test-isolation = import ./examples/02-features/test-isolation.nix { inherit pkgs platform; };
-          
-          # Example: Structured logging
-          example-structured-logging = import ./examples/02-features/structured-logging.nix { inherit pkgs platform; };
-          
-          # Example: Matrix builds (compile-time job generation)
-          example-matrix-builds = import ./examples/02-features/matrix-builds.nix { inherit pkgs platform; };
-          
-          # Example: Retry mechanism
-          example-retry = import ./examples/02-features/retry.nix { inherit pkgs platform; };
-          
-          # Example: Retry comprehensive tests
-          test-retry-comprehensive = import ./examples/02-features/test-retry-comprehensive.nix { inherit pkgs platform; };
-          
-          # Example: Conditions comprehensive tests
-          test-conditions-comprehensive = import ./examples/02-features/test-conditions-comprehensive.nix { inherit pkgs platform; };
-          
-          # ===== 03-real-world: Production pipelines =====
-          
-          # Example: Complete CI/CD pipeline
-          example-complete = import ./examples/03-real-world/complete.nix { inherit pkgs platform; };
-          
-          # Example: Python CI/CD pipeline
-          example-python-ci = import ./examples/03-real-world/python-ci.nix { inherit pkgs platform; };
-          
-          # Example: Python CI (simplified)
-          example-python-ci-simple = import ./examples/03-real-world/python-ci-simple.nix { inherit pkgs platform; };
-          
-          # ===== 99-untested: Not validated yet =====
-          
-          # Example: Docker executor (NOT TESTED)
-          example-docker-ci = import ./examples/99-untested/docker-ci.nix { inherit pkgs platform; };
-          
-          # Example: Artifacts with OCI executor (NOT TESTED)
-          example-artifacts-oci = import ./examples/99-untested/artifacts-simple-oci.nix { inherit pkgs platform; };
-          
-          # Example: Artifacts with OCI build mode (NOT TESTED)
-          example-artifacts-oci-build = import ./examples/99-untested/artifacts-oci-build.nix { inherit pkgs platform; };
-          
-          # Example: Artifacts paths with OCI (NOT TESTED)
-          example-artifacts-paths-oci = import ./examples/99-untested/artifacts-paths-oci.nix { inherit pkgs platform; };
-          
+        in
+        examplePackages // {
           # Set default to complete example
-          default = self.packages.${system}.example-complete;
+          default = examplePackages.example-complete or examplePackages.example-simple or (builtins.head (builtins.attrValues examplePackages));
         }
       );
       
@@ -115,21 +89,47 @@
             nixpkgs-fmt
           ];
           
-          shellHook = ''
-            echo "NixActions development environment"
-            echo ""
-            echo "Examples:"
-            echo "  nix run .#example-simple"
-            echo "  nix run .#example-parallel"
-            echo "  nix run .#example-complete"
-            echo "  nix run .#example-python-ci"
-            echo "  nix run .#example-retry"
-            echo ""
-            echo "Tests:"
-            echo "  nix run .#test-retry-comprehensive"
-            echo "  nix run .#test-conditions-comprehensive"
-            echo "  nix run .#example-test-action-conditions"
-          '';
+          shellHook = 
+            let
+              lib = pkgs.lib;
+              
+              # Discover examples
+              examples = discoverAllExamples pkgs;
+              
+              # Separate regular examples and tests
+              regularExamples = lib.filter (ex: !ex.isTest) examples;
+              testExamples = lib.filter (ex: ex.isTest) examples;
+              
+              # Get featured examples (first 6 non-test examples)
+              featuredExamples = lib.take 6 regularExamples;
+              
+              # Format example list
+              formatExample = ex: "  nix run .#${ex.packageName}";
+              
+              featuredList = lib.concatStringsSep "\n" (
+                map formatExample featuredExamples
+              );
+              
+              testsList = lib.concatStringsSep "\n" (
+                map formatExample testExamples
+              );
+              
+            in ''
+              echo "╔═══════════════════════════════════════════════════════╗"
+              echo "║ NixActions - Development Environment                  ║"
+              echo "╚═══════════════════════════════════════════════════════╝"
+              echo ""
+              echo "📦 Discovered ${toString (builtins.length examples)} examples (${toString (builtins.length regularExamples)} examples, ${toString (builtins.length testExamples)} tests)"
+              echo ""
+              echo "Featured Examples:"
+              ${featuredList}
+              echo ""
+              echo "Tests:"
+              ${testsList}
+              echo ""
+              echo "💡 List all: nix flake show"
+              echo "📚 Docs: cat README.md"
+            '';
         };
       });
     };
