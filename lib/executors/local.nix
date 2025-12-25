@@ -23,9 +23,10 @@ setup_local_workspace'';
   executeJob = { jobName, actionDerivations, env }: ''
     setup_local_job "${jobName}"
 ${lib.concatStringsSep "\n" (
-  lib.mapAttrsToList (k: v: 
-    "export ${k}=${lib.escapeShellArg (toString v)}"
-  ) env
+  lib.mapAttrsToList (k: v: ''
+    if [ -z "''${${k}+x}" ]; then
+      export ${k}=${lib.escapeShellArg (toString v)}
+    fi'') env
 )}
 ACTION_FAILED=false
 ${lib.concatMapStringsSep "\n" (action: 

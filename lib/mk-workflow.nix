@@ -4,12 +4,14 @@
   name,
   jobs,
   env ? {},
+  envFrom ? [],  # List of environment provider derivations
   logging ? {},  # { format = "structured"; level = "info"; }
   retry ? null,  # Workflow-level retry config
 }:
 
 assert lib.assertMsg (name != "") "Workflow name cannot be empty";
 assert lib.assertMsg (builtins.isAttrs jobs) "jobs must be an attribute set";
+assert lib.assertMsg (builtins.isList envFrom) "envFrom must be a list of provider derivations";
 
 let
   # Import logging utilities
@@ -87,16 +89,11 @@ let
         # Extract dependencies
         actionDeps = action.deps or [];
         
-        drv = pkgs.writeScriptBin actionName ''
-          #!${pkgs.bash}/bin/bash
-          
-          # Add dependencies to PATH
-          ${lib.optionalString (actionDeps != []) ''
-            export PATH=${lib.makeBinPath actionDeps}:$PATH
-          ''}
-          
-          ${actionBash}
-        '';
+        drv = pkgs.writeShellApplication {
+          name = actionName;
+          runtimeInputs = actionDeps;
+          text = actionBash;
+        };
       in
         drv // {
           passthru = (drv.passthru or {}) // {
@@ -204,6 +201,78 @@ in (pkgs.writeScriptBin name ''
   WORKFLOW_CANCELLED=false
   trap 'WORKFLOW_CANCELLED=true; echo "⊘ Workflow cancelled"; exit 130' SIGINT SIGTERM
   
+  # ============================================
+  # Environment Provider Execution
+  # ============================================
+  
+  # Helper: Execute provider and apply exports
+  run_provider() {
+    local provider=$1
+    local provider_name=$(basename "$provider")
+    
+    _log_workflow provider "$provider_name" event "→" "Loading environment"
+    
+    # Execute provider, capture output
+    local output
+    if ! output=$("$provider" 2>&1); then
+      local exit_code=$?
+      _log_workflow provider "$provider_name" event "✗" "Provider failed (exit $exit_code)"
+      echo "$output" >&2
+      exit $exit_code
+    fi
+    
+    # Apply exports - providers always override previous values
+    # Runtime environment (already in shell) has highest priority
+    local vars_set=0
+    local vars_from_runtime=0
+    
+    while IFS= read -r line; do
+      if [[ "$line" =~ ^export[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)= ]]; then
+        local key="''${BASH_REMATCH[1]}"
+        
+        # Check if variable was set from runtime (before provider execution started)
+        # We detect this by checking if it's in our RUNTIME_ENV_KEYS list
+        if [[ " ''${RUNTIME_ENV_KEYS} " =~ " ''${key} " ]]; then
+          # Runtime env has highest priority - skip
+          vars_from_runtime=$((vars_from_runtime + 1))
+        else
+          # Apply provider value (may override previous provider)
+          eval "$line"
+          vars_set=$((vars_set + 1))
+        fi
+      fi
+    done <<< "$output"
+    
+    if [ $vars_set -gt 0 ]; then
+      _log_workflow provider "$provider_name" vars_set "$vars_set" event "✓" "Variables loaded"
+    fi
+    if [ $vars_from_runtime -gt 0 ]; then
+      _log_workflow provider "$provider_name" vars_from_runtime "$vars_from_runtime" event "⊘" "Variables skipped (runtime override)"
+    fi
+  }
+  
+  # Execute envFrom providers in order
+  ${lib.optionalString (envFrom != []) ''
+  # Capture runtime environment keys (highest priority)
+  RUNTIME_ENV_KEYS=$(compgen -e | tr '\n' ' ')
+  
+  _log_workflow event "→" "Loading environment from providers"
+  ${lib.concatMapStringsSep "\n" (provider: ''
+  run_provider "${provider}/bin/$(ls ${provider}/bin | head -1)"
+  '') envFrom}
+  _log_workflow event "✓" "Environment loaded"
+  ''}
+  
+  # Apply workflow-level env (hardcoded, lowest priority)
+  ${lib.concatStringsSep "\n" (lib.mapAttrsToList (k: v: ''
+  if [ -z "''${${k}+x}" ]; then
+    export ${k}=${lib.escapeShellArg (toString v)}
+  fi'') env)}
+  
+  # ============================================
+  # Job Functions
+  # ============================================
+  
   ${lib.concatStringsSep "\n" 
     (lib.mapAttrsToList generateJob jobs)}
   
@@ -235,9 +304,9 @@ in (pkgs.writeScriptBin name ''
   
   main "$@"
 '').overrideAttrs (old: {
-  # Add all action derivations as build-time dependencies
+  # Add all action derivations and env providers as build-time dependencies
   # This ensures Nix knows about them and includes them in closures
-  buildInputs = (old.buildInputs or []) ++ allActionDerivations ++ [
+  buildInputs = (old.buildInputs or []) ++ allActionDerivations ++ envFrom ++ [
     loggingLib.loggingHelpers
     retryLib.retryHelpers
     runtimeHelpers
