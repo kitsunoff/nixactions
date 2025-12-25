@@ -100,14 +100,11 @@
               regularExamples = lib.filter (ex: !ex.isTest) examples;
               testExamples = lib.filter (ex: ex.isTest) examples;
               
-              # Get featured examples (first 6 non-test examples)
-              featuredExamples = lib.take 6 regularExamples;
-              
               # Format example list
               formatExample = ex: "echo \"  nix run .#${ex.packageName}\"";
               
-              featuredList = lib.concatStringsSep "\n" (
-                map formatExample featuredExamples
+              examplesList = lib.concatStringsSep "\n" (
+                map formatExample regularExamples
               );
               
               testsList = lib.concatStringsSep "\n" (
@@ -121,14 +118,14 @@
               echo ""
               echo "📦 Discovered ${toString (builtins.length examples)} examples (${toString (builtins.length regularExamples)} examples, ${toString (builtins.length testExamples)} tests)"
               echo ""
-              echo "Featured Examples:"
-              ${featuredList}
+              echo "Examples:"
+              ${examplesList}
               echo ""
               echo "Tests:"
               ${testsList}
               echo ""
-              echo "💡 List all: nix flake show"
-              echo "📚 Docs: cat README.md"
+              echo "💡 More info: nix flake show"
+              echo "📚 Documentation: cat README.md"
             '';
         };
       });
