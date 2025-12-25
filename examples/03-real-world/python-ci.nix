@@ -203,6 +203,7 @@ EOF
             
             # Create virtual environment
             python -m venv venv
+            # shellcheck disable=SC1091
             source venv/bin/activate
             
             # Install dependencies
@@ -217,6 +218,7 @@ EOF
           deps = [ pkgs.python311 ];
           bash = ''
             echo "→ Running unit tests with pytest"
+            # shellcheck disable=SC1091
             source venv/bin/activate
             
             # Run tests with coverage

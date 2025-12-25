@@ -28,9 +28,7 @@ in
     echo "→ Setting up nix-shell with packages: ${packageList}"
     
     # Build the environment with all packages
-    ENV_PATH=$(nix-build --no-out-link -E '${buildEnvExpr}' 2>&1)
-    
-    if [ $? -eq 0 ]; then
+    if ENV_PATH=$(nix-build --no-out-link -E '${buildEnvExpr}' 2>&1); then
       # Add to PATH for this job
       export PATH="$ENV_PATH/bin:$PATH"
       

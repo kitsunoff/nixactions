@@ -15,6 +15,7 @@ platform.mkWorkflow {
           name = "set-regular-var";
           bash = ''
             # Just VAR=value (no local, no export)
+            # shellcheck disable=SC2034
             MY_VAR="regular-value"
             echo "→ Set MY_VAR='regular-value' (no local, no export)"
           '';
@@ -44,8 +45,9 @@ platform.mkWorkflow {
         {
           name = "set-local-var";
           bash = ''
-            local LOCAL_VAR="local-value"
-            echo "→ Set LOCAL_VAR='local-value' (with local)"
+            # Set variable without export (action-scoped)
+            LOCAL_VAR="local-value"
+            echo "→ Set LOCAL_VAR='local-value' (no export)"
             echo "  In same action: LOCAL_VAR='$LOCAL_VAR'"
           '';
         }
@@ -54,10 +56,10 @@ platform.mkWorkflow {
           name = "try-use-local";
           bash = ''
             echo "→ In second action: LOCAL_VAR='$LOCAL_VAR'"
-            # Note: 'local' makes var local to job function
-            # Since all actions run in same function, it's still visible!
+            # Note: Without export, var is not visible to subsequent actions
+            # Actions run as separate bash invocations
             if [ -n "''${LOCAL_VAR:-}" ]; then
-              echo "ℹ local var still visible (same function scope)"
+              echo "ℹ var still visible (same job scope)"
             else
               echo "✓ local var not visible"
             fi

@@ -25,7 +25,7 @@ platform.mkWorkflow {
             ATTEMPT=$(cat "$STATE_FILE")
             echo "Exponential backoff: Attempt $ATTEMPT/3"
             
-            if [ $ATTEMPT -lt 3 ]; then
+            if [ "$ATTEMPT" -lt 3 ]; then
               echo "$((ATTEMPT + 1))" > "$STATE_FILE"
               echo "FAIL: Not ready yet (attempt $ATTEMPT)" >&2
               exit 1
@@ -62,7 +62,7 @@ platform.mkWorkflow {
             ATTEMPT=$(cat "$STATE_FILE")
             echo "Linear backoff: Attempt $ATTEMPT/2"
             
-            if [ $ATTEMPT -lt 2 ]; then
+            if [ "$ATTEMPT" -lt 2 ]; then
               echo "$((ATTEMPT + 1))" > "$STATE_FILE"
               echo "FAIL: Not ready yet (attempt $ATTEMPT)" >&2
               exit 1
@@ -99,7 +99,7 @@ platform.mkWorkflow {
             ATTEMPT=$(cat "$STATE_FILE")
             echo "Constant backoff: Attempt $ATTEMPT/2"
             
-            if [ $ATTEMPT -lt 2 ]; then
+            if [ "$ATTEMPT" -lt 2 ]; then
               echo "$((ATTEMPT + 1))" > "$STATE_FILE"
               echo "FAIL: Not ready yet (attempt $ATTEMPT)" >&2
               exit 1
@@ -199,7 +199,7 @@ platform.mkWorkflow {
             ATTEMPT=$(cat "$STATE_FILE")
             echo "Testing max delay cap: Attempt $ATTEMPT"
             
-            if [ $ATTEMPT -lt 2 ]; then
+            if [ "$ATTEMPT" -lt 2 ]; then
               echo "$((ATTEMPT + 1))" > "$STATE_FILE"
               echo "FAIL: First attempt" >&2
               exit 1
@@ -244,7 +244,7 @@ platform.mkWorkflow {
             ATTEMPT=$(cat "$STATE_FILE")
             echo "Job-level retry: Attempt $ATTEMPT"
             
-            if [ $ATTEMPT -lt 2 ]; then
+            if [ "$ATTEMPT" -lt 2 ]; then
               echo "$((ATTEMPT + 1))" > "$STATE_FILE"
               exit 1
             fi
@@ -282,7 +282,7 @@ platform.mkWorkflow {
             ATTEMPT=$(cat "$STATE_FILE")
             echo "Action overrides job retry: Attempt $ATTEMPT/3"
             
-            if [ $ATTEMPT -lt 3 ]; then
+            if [ "$ATTEMPT" -lt 3 ]; then
               echo "$((ATTEMPT + 1))" > "$STATE_FILE"
               exit 1
             fi
@@ -324,11 +324,11 @@ platform.mkWorkflow {
             
             echo "Timing verification: Attempt $ATTEMPT, Elapsed: ''${ELAPSED}s"
             
-            if [ $ATTEMPT -lt 3 ]; then
+            if [ "$ATTEMPT" -lt 3 ]; then
               # Expected delays: 1s, 2s (total ~3s for 3 attempts)
               echo "$((ATTEMPT + 1))" > "$STATE_FILE"
               
-              if [ $ATTEMPT -eq 2 ]; then
+              if [ "$ATTEMPT" -eq 2 ]; then
                 # After 2 retries, should have waited ~3 seconds (1s + 2s)
                 if [ $ELAPSED -lt 2 ]; then
                   echo "WARNING: Timing seems too fast! Expected ~3s, got ''${ELAPSED}s"

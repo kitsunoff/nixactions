@@ -126,7 +126,7 @@ platform.mkWorkflow {
             tar czf build/nixactions.tar.gz lib/ examples/ flake.nix
             
             echo "✓ Build complete"
-            echo "Artifact: $(ls -lh build/nixactions.tar.gz | awk '{print $5}')"
+            echo "Artifact: $(du -h build/nixactions.tar.gz | cut -f1)"
           '';
         }
       ];
