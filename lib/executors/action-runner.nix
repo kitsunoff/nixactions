@@ -18,13 +18,16 @@ rec {
   }:
     let
       retryLib = import ../retry.nix { inherit lib pkgs; };
+      timeoutLib = import ../timeout.nix { inherit lib pkgs; };
       actionName = action.passthru.name or (builtins.baseNameOf action);
       actionCondition = 
         if action.passthru.condition != null 
         then action.passthru.condition 
         else "success()";
       actionRetry = action.passthru.retry or null;
+      actionTimeout = action.passthru.timeout or null;
       retryEnv = retryLib.retryToEnv actionRetry;
+      timeoutEnv = timeoutLib.timeoutToEnv actionTimeout;
       actionEnv = action.passthru.env or {};
     in ''
       # Set action-level environment variables
@@ -34,6 +37,10 @@ rec {
       # Set retry environment variables
       ${lib.concatStringsSep "\n" (
         lib.mapAttrsToList (k: v: "export ${k}=${lib.escapeShellArg (toString v)}") retryEnv
+      )}
+      # Set timeout environment variables
+      ${lib.concatStringsSep "\n" (
+        lib.mapAttrsToList (k: v: "export ${k}=${lib.escapeShellArg (toString v)}") timeoutEnv
       )}
       run_action "${jobName}" "${actionName}" "${actionBinary}" '${actionCondition}' '${timingCommand}'
     '';

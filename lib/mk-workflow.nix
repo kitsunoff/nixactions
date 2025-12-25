@@ -7,6 +7,7 @@
   envFrom ? [],  # List of environment provider derivations
   logging ? {},  # { format = "structured"; level = "info"; }
   retry ? null,  # Workflow-level retry config
+  timeout ? null,  # Workflow-level timeout (e.g., "30m", "1h", "120s")
 }:
 
 assert lib.assertMsg (name != "") "Workflow name cannot be empty";
@@ -19,6 +20,9 @@ let
   
   # Import retry utilities
   retryLib = import ./retry.nix { inherit lib pkgs; };
+  
+  # Import timeout utilities
+  timeoutLib = import ./timeout.nix { inherit pkgs lib; };
   
   # Import runtime helpers (derivation)
   runtimeHelpers = import ./runtime-helpers.nix { inherit pkgs lib; };
@@ -70,8 +74,8 @@ let
     lib.unique (lib.concatMap (a: a.deps or []) actions);
   
   # Convert action attribute to derivation if needed
-  # Also merges retry configuration from workflow -> job -> action
-  toActionDerivation = jobRetry: action:
+  # Also merges retry and timeout configuration from workflow -> job -> action
+  toActionDerivation = jobRetry: jobTimeout: action:
     if builtins.isAttrs action && !(action ? type && action.type == "derivation")
     then
       # It's an attribute, convert to derivation
@@ -84,6 +88,13 @@ let
           workflow = retry;
           job = jobRetry;
           action = action.retry or null;
+        };
+        
+        # Merge timeout configs: action > job > workflow
+        actionTimeout = timeoutLib.mergeTimeoutConfigs {
+          workflow = timeout;
+          job = jobTimeout;
+          action = action.timeout or null;
         };
         
         # Extract dependencies
@@ -104,6 +115,7 @@ let
             workdir = action.workdir or null;
             condition = action.condition or null;
             retry = actionRetry;  # Merged retry config
+            timeout = actionTimeout;  # Merged timeout config
           };
         }
     else
@@ -125,8 +137,9 @@ let
     lib.mapAttrsToList (jobName: job:
       let
         jobRetry = job.retry or retry;
+        jobTimeout = job.timeout or timeout;
       in
-        map (toActionDerivation jobRetry) job.actions
+        map (toActionDerivation jobRetry jobTimeout) job.actions
     ) jobs
   ));
   
@@ -138,8 +151,11 @@ let
       # Merge retry config for this job: job > workflow
       jobRetry = job.retry or retry;
       
+      # Merge timeout config for this job: job > workflow
+      jobTimeout = job.timeout or timeout;
+      
       # Convert actions to derivations (if not already)
-      actionDerivations = map (toActionDerivation jobRetry) job.actions;
+      actionDerivations = map (toActionDerivation jobRetry jobTimeout) job.actions;
       
       # Job-level environment
       jobEnv = lib.attrsets.mergeAttrsList [ env (job.env or {}) ];
@@ -309,6 +325,7 @@ in (pkgs.writeScriptBin name ''
   buildInputs = (old.buildInputs or []) ++ allActionDerivations ++ envFrom ++ [
     loggingLib.loggingHelpers
     retryLib.retryHelpers
+    timeoutLib.timeoutHelpers
     runtimeHelpers
   ];
 })

@@ -7,6 +7,32 @@ pkgs.writeScriptBin "nixactions-runtime" ''
   #!${pkgs.bash}/bin/bash
   
   # ============================================================
+  # Timeout Helpers
+  # ============================================================
+  
+  # Parse timeout string to seconds
+  # Examples: "30s" → 30, "5m" → 300, "2h" → 7200
+  parse_timeout() {
+    local timeout_str="$1"
+    
+    if [[ -z "$timeout_str" ]]; then
+      echo "0"
+      return
+    fi
+    
+    if [[ "$timeout_str" =~ ^([0-9]+)s$ ]]; then
+      echo "''${BASH_REMATCH[1]}"
+    elif [[ "$timeout_str" =~ ^([0-9]+)m$ ]]; then
+      echo "$((''${BASH_REMATCH[1]} * 60))"
+    elif [[ "$timeout_str" =~ ^([0-9]+)h$ ]]; then
+      echo "$((''${BASH_REMATCH[1]} * 3600))"
+    else
+      # Assume seconds if no suffix
+      echo "$timeout_str"
+    fi
+  }
+  
+  # ============================================================
   # Job Status Tracking
   # ============================================================
   
@@ -86,10 +112,51 @@ pkgs.writeScriptBin "nixactions-runtime" ''
       fi
     }
     
-    # Execute action with retry wrapper (handles retry if configured)
+    # Execute action with timeout + retry wrappers
     set +e
-    retry_command _execute_action
-    local _action_exit_code=$?
+    if [ -n "''${NIXACTIONS_TIMEOUT:-}" ]; then
+      # Timeout is configured - wrap with timeout
+      _timeout_start=$SECONDS
+      _timeout_seconds=$(parse_timeout "$NIXACTIONS_TIMEOUT")
+      
+      _log job "$job_name" action "$action_name" timeout "$NIXACTIONS_TIMEOUT" event "⏱" "Timeout configured"
+      
+      # Run with timeout wrapper
+      (
+        retry_command _execute_action
+      ) &
+      local _timeout_pid=$!
+      
+      # Wait for completion or timeout
+      while kill -0 $_timeout_pid 2>/dev/null; do
+        local _timeout_elapsed=$((SECONDS - _timeout_start))
+        
+        if [ $_timeout_elapsed -ge $_timeout_seconds ]; then
+          # Timeout reached
+          _log job "$job_name" action "$action_name" timeout "$NIXACTIONS_TIMEOUT" elapsed "''${_timeout_elapsed}s" event "✗" "Timeout reached"
+          
+          # Kill process tree
+          pkill -P $_timeout_pid 2>/dev/null || true
+          kill $_timeout_pid 2>/dev/null || true
+          sleep 1
+          kill -9 $_timeout_pid 2>/dev/null || true
+          
+          local _action_exit_code=124  # Standard timeout exit code
+          set -e
+          return 124
+        fi
+        
+        sleep 1
+      done
+      
+      # Get exit code
+      wait $_timeout_pid
+      local _action_exit_code=$?
+    else
+      # No timeout - run directly
+      retry_command _execute_action
+      local _action_exit_code=$?
+    fi
     set -e
     
     # Calculate duration
