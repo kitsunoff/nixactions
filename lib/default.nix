@@ -15,6 +15,9 @@ let
   # Job templates
   jobs = import ./jobs/default.nix { inherit pkgs lib actions; };
   
+  # Environment providers
+  envProviders = import ./env-providers/default.nix { inherit pkgs lib; };
+  
   # Logging utilities
   logging = import ./logging.nix { inherit pkgs lib; };
   
@@ -33,6 +36,9 @@ in {
   
   # Export job templates
   inherit jobs;
+  
+  # Export environment providers
+  inherit envProviders;
   
   # Export logging utilities
   inherit logging;
