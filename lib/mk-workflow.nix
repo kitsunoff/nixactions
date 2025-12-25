@@ -123,6 +123,16 @@ let
     then { name = input; path = "."; }  # Simple string -> default path
     else input;  # Already attribute set
   
+  # Collect all action derivations from all jobs
+  allActionDerivations = lib.unique (lib.flatten (
+    lib.mapAttrsToList (jobName: job:
+      let
+        jobRetry = job.retry or retry;
+      in
+        map (toActionDerivation jobRetry) job.actions
+    ) jobs
+  ));
+  
   # Generate single job bash function
   generateJob = jobName: job:
     let
@@ -173,7 +183,7 @@ let
       }
     '';
 
-in pkgs.writeScriptBin name ''
+in (pkgs.writeScriptBin name ''
   #!/usr/bin/env bash
   set -euo pipefail
   
@@ -224,4 +234,12 @@ in pkgs.writeScriptBin name ''
   }
   
   main "$@"
-''
+'').overrideAttrs (old: {
+  # Add all action derivations as build-time dependencies
+  # This ensures Nix knows about them and includes them in closures
+  buildInputs = (old.buildInputs or []) ++ allActionDerivations ++ [
+    loggingLib.loggingHelpers
+    retryLib.retryHelpers
+    runtimeHelpers
+  ];
+})
