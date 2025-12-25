@@ -1617,7 +1617,7 @@ Provider :: Derivation {
 
 ```nix
 # 1. File provider - load from .env file
-platform.providers.file {
+platform.envProviders.file {
   path = ".env.production";
   required ? false;  # Exit 1 if file not found
 }
@@ -1625,7 +1625,7 @@ platform.providers.file {
 # Execution: Reads file, outputs export statements
 
 # 2. SOPS provider - decrypt SOPS file
-platform.providers.sops {
+platform.envProviders.sops {
   file = ./secrets/prod.sops.yaml;
   format ? "yaml";  # yaml | json | dotenv
   required ? true;
@@ -1634,7 +1634,7 @@ platform.providers.sops {
 # Execution: sops -d file | convert to exports
 
 # 3. Vault provider - fetch from HashiCorp Vault
-platform.providers.vault {
+platform.envProviders.vault {
   path = "secret/data/production";
   addr ? null;  # Uses $VAULT_ADDR if not specified
   required ? true;
@@ -1643,7 +1643,7 @@ platform.providers.vault {
 # Execution: vault kv get path | convert to exports
 
 # 4. 1Password provider
-platform.providers.onepassword {
+platform.envProviders.onepassword {
   vault = "Production";
   item = "API Keys";
   required ? false;
@@ -1651,7 +1651,7 @@ platform.providers.onepassword {
 # → /nix/store/aaa-1password-provider
 
 # 5. Age provider - decrypt age file
-platform.providers.age {
+platform.envProviders.age {
   file = ./secrets.age;
   identity = ./keys/age-key.txt;
   required ? true;
@@ -1659,14 +1659,14 @@ platform.providers.age {
 # → /nix/store/bbb-age-provider
 
 # 6. Bitwarden provider
-platform.providers.bitwarden {
+platform.envProviders.bitwarden {
   itemId = "xxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx";
   required ? false;
 }
 # → /nix/store/ccc-bitwarden-provider
 
 # 7. Required env validator
-platform.providers.required [
+platform.envProviders.required [
   "API_KEY"
   "DATABASE_URL"
   "DEPLOY_TOKEN"
@@ -1675,7 +1675,7 @@ platform.providers.required [
 # Execution: Check if vars exist, exit 1 if missing
 
 # 8. Static env provider (for hardcoded values)
-platform.providers.static {
+platform.envProviders.static {
   CI = "true";
   NODE_ENV = "production";
 }
@@ -1698,26 +1698,26 @@ platform.mkWorkflow {
   # Provider derivations
   envFrom = [
     # Load common config
-    (platform.providers.file {
+    (platform.envProviders.file {
       path = ".env.common";
       required = false;
     })
     
     # Load production secrets from SOPS
-    (platform.providers.sops {
+    (platform.envProviders.sops {
       file = ./secrets/production.sops.yaml;
       format = "yaml";
       required = true;
     })
     
     # Load API keys from Vault
-    (platform.providers.vault {
+    (platform.envProviders.vault {
       path = "secret/data/api/production";
       required = true;
     })
     
     # Validate required variables
-    (platform.providers.required [
+    (platform.envProviders.required [
       "API_KEY"
       "DATABASE_URL"
     ])
@@ -1727,7 +1727,7 @@ platform.mkWorkflow {
     deploy = {
       # Job can have additional providers
       envFrom = [
-        (platform.providers.file {
+        (platform.envProviders.file {
           path = ".env.deploy";
           required = false;
         })
@@ -1907,20 +1907,20 @@ platform.mkWorkflow {
   # Workflow-level providers (derivations)
   envFrom = [
     # Load common config from file
-    (platform.providers.file {
+    (platform.envProviders.file {
       path = ".env.common";
       required = false;
     })
     
     # Load shared secrets from SOPS
-    (platform.providers.sops {
+    (platform.envProviders.sops {
       file = ./secrets/common.sops.yaml;
       format = "yaml";
       required = true;
     })
     
     # Validate that basic vars are set
-    (platform.providers.required [
+    (platform.envProviders.required [
       "VAULT_ADDR"
       "VAULT_TOKEN"
     ])
@@ -1939,19 +1939,19 @@ platform.mkWorkflow {
       # Job-level providers (executed after workflow providers)
       envFrom = [
         # API-specific config
-        (platform.providers.file {
+        (platform.envProviders.file {
           path = ".env.api";
           required = false;
         })
         
         # API secrets from Vault
-        (platform.providers.vault {
+        (platform.envProviders.vault {
           path = "secret/data/api/production";
           required = true;
         })
         
         # Validate API-specific vars
-        (platform.providers.required [
+        (platform.envProviders.required [
           "API_KEY"
           "DATABASE_URL"
         ])
@@ -1997,7 +1997,7 @@ platform.mkWorkflow {
       
       envFrom = [
         # Worker-specific secrets from 1Password
-        (platform.providers.onepassword {
+        (platform.envProviders.onepassword {
           vault = "Production";
           item = "Worker Secrets";
           required = true;
@@ -2028,18 +2028,18 @@ Since providers are derivations, they can be tested independently:
 
 ```bash
 # Test SOPS provider
-$ nix build .#providers.sops-production
+$ nix build .#envProviders.sops-production
 $ ./result
 export API_KEY="secret123"
 export DATABASE_URL="postgres://prod.example.com/db"
 
 # Test Vault provider
-$ VAULT_TOKEN=xxx nix run .#providers.vault-api
+$ VAULT_TOKEN=xxx nix run .#envProviders.vault-api
 export API_KEY="from-vault"
 export SERVICE_TOKEN="token123"
 
 # Test required validator
-$ API_KEY=test nix run .#providers.validate-api
+$ API_KEY=test nix run .#envProviders.validate-api
 # (exits 0 if all required vars present, exits 1 otherwise)
 ```
 
@@ -2155,12 +2155,12 @@ Providers are simple bash scripts that output `export` statements.
 #### File Provider
 
 ```nix
-# lib/providers/file.nix
+# lib/env-providers/file.nix
 { pkgs, lib }:
 
 { path, required ? false }:
 
-pkgs.writeScriptBin "file-provider" ''
+pkgs.writeScriptBin "env-provider-file" ''
   #!/usr/bin/env bash
   set -euo pipefail
   
@@ -2200,12 +2200,12 @@ pkgs.writeScriptBin "file-provider" ''
 #### SOPS Provider
 
 ```nix
-# lib/providers/sops.nix
+# lib/env-providers/sops.nix
 { pkgs, lib }:
 
 { file, format ? "yaml", required ? true }:
 
-pkgs.writeScriptBin "sops-provider" ''
+pkgs.writeScriptBin "env-provider-sops" ''
   #!/usr/bin/env bash
   set -euo pipefail
   
@@ -2250,12 +2250,12 @@ pkgs.writeScriptBin "sops-provider" ''
 #### Required Validator Provider
 
 ```nix
-# lib/providers/required.nix
+# lib/env-providers/required.nix
 { pkgs, lib }:
 
 requiredVars:
 
-pkgs.writeScriptBin "required-provider" ''
+pkgs.writeScriptBin "env-provider-required" ''
   #!/usr/bin/env bash
   set -euo pipefail
   
@@ -2282,12 +2282,12 @@ pkgs.writeScriptBin "required-provider" ''
 #### Vault Provider
 
 ```nix
-# lib/providers/vault.nix
+# lib/env-providers/vault.nix
 { pkgs, lib }:
 
 { path, addr ? null, required ? true }:
 
-pkgs.writeScriptBin "vault-provider" ''
+pkgs.writeScriptBin "env-provider-vault" ''
   #!/usr/bin/env bash
   set -euo pipefail
   
