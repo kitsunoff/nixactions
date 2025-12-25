@@ -1,0 +1,12 @@
+{
+  "name": "demo-nodejs-app",
+  "version": "1.0.0",
+  "description": "Demo Node.js app for testing NixActions pipeline",
+  "main": "index.js",
+  "scripts": {
+    "lint": "echo '✓ Linting passed'",
+    "typecheck": "echo '✓ Type checking passed'",
+    "test": "echo '✓ Tests passed' && mkdir -p coverage && echo 'coverage' > coverage/coverage.txt",
+    "build": "mkdir -p dist && echo 'console.log(\"Hello from demo app!\");' > dist/index.js && echo '✓ Build complete'"
+  }
+}
