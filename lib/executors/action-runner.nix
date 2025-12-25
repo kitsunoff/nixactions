@@ -25,7 +25,13 @@ rec {
         else "success()";
       actionRetry = action.passthru.retry or null;
       retryEnv = retryLib.retryToEnv actionRetry;
+      actionEnv = action.passthru.env or {};
     in ''
+      # Set action-level environment variables
+      ${lib.concatStringsSep "\n" (
+        lib.mapAttrsToList (k: v: "export ${k}=${lib.escapeShellArg (toString v)}") actionEnv
+      )}
+      # Set retry environment variables
       ${lib.concatStringsSep "\n" (
         lib.mapAttrsToList (k: v: "export ${k}=${lib.escapeShellArg (toString v)}") retryEnv
       )}

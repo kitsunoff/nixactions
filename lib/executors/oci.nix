@@ -104,7 +104,6 @@ mkExecutor {
     ${pkgs.docker}/bin/docker exec \
       -e WORKFLOW_NAME \
       -e NIXACTIONS_LOG_FORMAT \
-      ${lib.concatMapStringsSep " " (k: "-e ${k}") (lib.attrNames env)} \
       "$CONTAINER_ID_OCI_${safeName}_${mode}" \
       bash -c ${lib.escapeShellArg ''
         set -uo pipefail
@@ -118,6 +117,8 @@ mkExecutor {
         touch "$JOB_ENV"
         export JOB_ENV
         _log_job "${jobName}" executor "oci-${safeName}-${mode}" workdir "$JOB_DIR" event "▶" "Job starting"
+        
+        # Set job-level environment variables
         ${lib.concatStringsSep "\n" (
           lib.mapAttrsToList (k: v: 
             "export ${k}=${lib.escapeShellArg (toString v)}"

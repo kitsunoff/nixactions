@@ -21,7 +21,12 @@
 5. [Actions as Derivations](#actions-as-derivations)
 6. [Conditions System](#conditions-system)
 7. [Retry Mechanism](#retry-mechanism)
-8. [Secrets Management](#secrets-management)
+8. [Environment Management](#environment-management)
+   - [Environment Sources](#environment-sources)
+   - [Runtime Environment Loading](#runtime-environment-loading)
+   - [Multi-level Environment Configuration](#multi-level-environment-configuration)
+   - [Executor Integration](#executor-integration)
+   - [Security Considerations](#security-considerations)
 9. [Artifacts Management](#artifacts-management)
    - [Custom Restore Paths](#custom-restore-paths)
 10. [API Reference](#api-reference)
@@ -328,12 +333,22 @@ Job :: {
   # Error handling
   continueOnError :: Bool = false,
   
-  # Environment
+  # Environment (runtime values)
   env :: AttrSet String = {},
+  envFrom :: [EnvSource] = [],
   
   # Artifacts
   inputs  :: [String | { name :: String, path :: String }] = [],  # Artifacts to restore (simple or with custom path)
   outputs :: AttrSet String = {},                                   # Artifacts to save
+}
+
+EnvSource :: 
+  | { file :: Path, required :: Bool = false }
+  | { sops :: { file :: Path, format :: "yaml" | "json" | "dotenv" }, required :: Bool = true }
+  | { vault :: { path :: String, addr :: String }, required :: Bool = true }
+  | { onepassword :: { vault :: String, item :: String }, required :: Bool = false }
+  | { age :: { file :: Path, identity :: Path }, required :: Bool = true }
+  | { bitwarden :: { itemId :: String }, required :: Bool = false }
 }
 ```
 
@@ -344,6 +359,14 @@ Job :: {
    → NIXACTIONS_ARTIFACTS_DIR="$HOME/.cache/nixactions/$WORKFLOW_ID/artifacts"
    → mkdir -p "$NIXACTIONS_ARTIFACTS_DIR"
    → export WORKFLOW_ID NIXACTIONS_ARTIFACTS_DIR
+   
+   → Load ALL environment variables (ONCE, immutable for entire workflow):
+     1. Runtime CLI env (highest priority)
+     2. CLI --env-file
+     3. Workflow envFrom (file, sops, vault, etc.)
+     4. Workflow env
+   → Validate required env vars
+   → Environment is now IMMUTABLE and shared across all jobs
 
 For each job:
 
@@ -388,9 +411,10 @@ At workflow end:
 **Type Signature:**
 ```nix
 WorkflowConfig :: {
-  name :: String,
-  jobs :: AttrSet Job,
-  env  :: AttrSet String = {},
+  name    :: String,
+  jobs    :: AttrSet Job,
+  env     :: AttrSet String = {},
+  envFrom :: [EnvSource] = [],
 }
 ```
 
@@ -1556,90 +1580,609 @@ nix run .#test-retry-comprehensive
 
 ---
 
-## Secrets Management
+## Environment Management
 
 ### Philosophy
 
-**NixActions doesn't manage secrets directly.** Instead, it provides:
-1. ✅ Universal access to environment variables
-2. ✅ Standard actions for popular secrets managers (SOPS, Vault, 1Password)
-3. ✅ Composability - use any secrets tool via bash
-4. ✅ Runtime env vars override everything
+**Environment variables in NixActions are managed at runtime, never at build time.**
 
-**Key principle:** Secrets are loaded via actions, not built into Nix derivations.
+**Core principles:**
+1. 🔒 **Secrets never in /nix/store** - Values loaded at runtime only
+2. 🎯 **Executor-agnostic** - Works across local, OCI, SSH, K8s executors
+3. 📦 **Multi-source** - Load from files, secret managers, CLI, or config
+4. 🔄 **Immutable** - Loaded once at workflow start, shared across jobs
+5. ✅ **Validated** - Required variables checked before execution
+
+**Key design:**
+- Build time: Only paths/references, no values
+- Runtime: Load all env vars at workflow start
+- Executors: Receive pre-populated environment to inject into execution context
 
 ---
 
-### Environment Variables
+### Environment Sources
 
-All jobs and actions have access to environment variables with clear precedence.
+Environment variables can come from multiple sources with clear precedence.
+
+#### Source Types
+
+```nix
+# 1. Direct env vars (workflow/job/action config)
+env = {
+  CI = "true";
+  NODE_ENV = "production";
+}
+
+# 2. Environment providers (envFrom)
+envFrom = [
+  # File provider
+  {
+    file = ".env.production";
+    required = true;  # Fail if file missing (default: false)
+  }
+  
+  # SOPS provider
+  {
+    sops = {
+      file = ./secrets/prod.sops.yaml;
+      format = "yaml";  # yaml | json | dotenv
+    };
+    required = true;
+  }
+  
+  # Vault provider
+  {
+    vault = {
+      path = "secret/data/production";
+      addr = "https://vault.example.com";
+    };
+    required = true;
+  }
+  
+  # 1Password provider
+  {
+    onepassword = {
+      vault = "Production";
+      item = "API Keys";
+    };
+    required = false;
+  }
+  
+  # Age encrypted file
+  {
+    age = {
+      file = ./secrets.age;
+      identity = ./keys/age-key.txt;
+    };
+    required = true;
+  }
+  
+  # Bitwarden provider
+  {
+    bitwarden = {
+      itemId = "xxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx";
+    };
+    required = false;
+  }
+  
+  # CLI env file (passed at runtime)
+  # nix run .#ci -- --env-file .env.override
+]
+```
 
 #### Precedence Order (highest to lowest)
 
 ```
-1. Runtime env:     API_KEY=xxx nix run .#ci
-2. Action env:      { env.API_KEY = "..."; bash = "..."; }
-3. Job env:         { env = { API_KEY = "..."; }; actions = [...]; }
-4. Workflow env:    mkWorkflow { env = { API_KEY = "..."; }; }
-5. System env:      $API_KEY from shell
+Build time (Nix evaluation):
+  - Only PATHS/REFERENCES stored, no values
+
+Runtime (workflow execution):
+  1. Runtime CLI:         API_KEY=secret nix run .#ci
+  2. CLI --env-file:      nix run .#ci -- --env-file .env.override
+  3. Action env:          action.env = { KEY = "value"; }
+  4. Action envFrom:      action.envFrom = [{ file = ".env.action"; }]
+  5. Job env:             job.env = { KEY = "value"; }
+  6. Job envFrom:         job.envFrom = [{ file = ".env.job"; }]
+  7. Workflow env:        workflow.env = { KEY = "value"; }
+  8. Workflow envFrom:    workflow.envFrom = [{ file = ".env.workflow"; }]
+```
+
+**Note:** Later sources (lower priority) only set variables that aren't already set.
+
+---
+
+### Runtime Environment Loading
+
+All environment variables are loaded **once** at the beginning of workflow execution and become **immutable** for the entire workflow run.
+
+#### Load Sequence
+
+```bash
+# Generated workflow script (runtime)
+
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ============================================
+# Phase 1: Load all environment sources
+# ============================================
+
+# Helper: Load .env file
+load_env_file() {
+  local file=$1
+  local required=${2:-false}
+  
+  if [ ! -f "$file" ]; then
+    if [ "$required" = "true" ]; then
+      echo "Error: Required env file not found: $file" >&2
+      exit 1
+    fi
+    return 0
+  fi
+  
+  echo "→ Loading env from: $file"
+  while IFS= read -r line || [ -n "$line" ]; do
+    [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+    if [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+      local key="${BASH_REMATCH[1]}"
+      local value="${BASH_REMATCH[2]}"
+      
+      # Remove quotes
+      if [[ "$value" =~ ^\"(.*)\"$ ]] || [[ "$value" =~ ^\'(.*)\'$ ]]; then
+        value="${BASH_REMATCH[1]}"
+      fi
+      
+      # Only set if not already set (priority)
+      if [ -z "${!key+x}" ]; then
+        export "$key=$value"
+        echo "  ✓ $key"
+      else
+        echo "  ⊘ $key (already set, skipping)"
+      fi
+    fi
+  done < "$file"
+}
+
+# Helper: Load from SOPS
+load_sops() {
+  local file=$1
+  local format=$2
+  local required=${3:-false}
+  
+  if [ ! -f "$file" ]; then
+    if [ "$required" = "true" ]; then
+      echo "Error: Required SOPS file not found: $file" >&2
+      exit 1
+    fi
+    return 0
+  fi
+  
+  echo "→ Loading secrets from SOPS: $file"
+  
+  case "$format" in
+    yaml)
+      eval $(sops -d "$file" | yq -r 'to_entries | .[] | "export \(.key)=\(.value | @sh)"')
+      ;;
+    json)
+      eval $(sops -d "$file" | jq -r 'to_entries | .[] | "export \(.key)=\(.value | @sh)"')
+      ;;
+    dotenv)
+      export $(sops -d "$file" | xargs)
+      ;;
+  esac
+  
+  echo "  ✓ Loaded SOPS secrets"
+}
+
+# Helper: Load from Vault
+load_vault() {
+  local path=$1
+  local addr=$2
+  local required=${3:-false}
+  
+  echo "→ Loading secrets from Vault: $path"
+  
+  export VAULT_ADDR="${addr:-${VAULT_ADDR:-}}"
+  
+  if [ -z "$VAULT_ADDR" ]; then
+    if [ "$required" = "true" ]; then
+      echo "Error: VAULT_ADDR not set" >&2
+      exit 1
+    fi
+    return 0
+  fi
+  
+  # Authenticate (expects VAULT_TOKEN in env)
+  if ! vault token lookup >/dev/null 2>&1; then
+    if [ "$required" = "true" ]; then
+      echo "Error: Vault authentication failed" >&2
+      exit 1
+    fi
+    return 0
+  fi
+  
+  # Read secrets
+  eval $(vault kv get -format=json "$path" | jq -r '.data.data | to_entries | .[] | "export \(.key)=\(.value | @sh)"')
+  
+  echo "  ✓ Loaded Vault secrets"
+}
+
+# Helper: Load from 1Password
+load_onepassword() {
+  local vault=$1
+  local item=$2
+  local required=${3:-false}
+  
+  echo "→ Loading secrets from 1Password: $vault/$item"
+  
+  if ! command -v op >/dev/null 2>&1; then
+    if [ "$required" = "true" ]; then
+      echo "Error: 1Password CLI (op) not found" >&2
+      exit 1
+    fi
+    return 0
+  fi
+  
+  # Read item fields as env vars
+  eval $(op item get "$item" --vault "$vault" --format json | jq -r '.fields[] | select(.type == "concealed" or .type == "string") | "export \(.label | ascii_upcase | gsub("[^A-Z0-9_]"; "_"))=\(.value | @sh)"')
+  
+  echo "  ✓ Loaded 1Password secrets"
+}
+
+# Helper: Validate required env vars
+require_env() {
+  local missing=()
+  
+  for var in "$@"; do
+    if [ -z "${!var+x}" ]; then
+      missing+=("$var")
+    fi
+  done
+  
+  if [ ${#missing[@]} -gt 0 ]; then
+    echo "Error: Required environment variables not set:" >&2
+    printf '  - %s\n' "${missing[@]}" >&2
+    exit 1
+  fi
+}
+
+# ============================================
+# Load environment (in priority order)
+# ============================================
+
+echo "╔════════════════════════════════════════╗"
+echo "║ Loading Environment                    ║"
+echo "╚════════════════════════════════════════╝"
+echo ""
+
+# CLI args and runtime env already in environment (highest priority)
+
+# Workflow envFrom (lowest priority - load first)
+load_env_file ".env.common" false
+load_sops "secrets/common.sops.yaml" "yaml" false
+
+# Workflow env (hardcoded from config)
+export CI="true"
+export WORKFLOW_NAME="ci"
+
+# Validate workflow-level required vars
+# require_env "VAULT_ADDR" "VAULT_TOKEN"
+
+echo ""
+echo "✓ Environment loaded"
+echo ""
+
+# ============================================
+# Phase 2: Execute workflow
+# ============================================
+
+# Environment is now IMMUTABLE for entire workflow
+# All jobs share the same environment
 ```
 
 ---
 
-### Built-in Secrets Actions
+### Multi-level Environment Configuration
 
-All secrets actions are derivations:
+Environment can be configured at workflow, job, and action levels.
+
+#### Example: Complete Environment Setup
+
+```nix
+platform.mkWorkflow {
+  name = "production-deployment";
+  
+  # Workflow-level environment
+  env = {
+    CI = "true";
+    ENVIRONMENT = "production";
+  };
+  
+  # Workflow-level providers
+  envFrom = [
+    # Common config for all jobs
+    {
+      file = ".env.common";
+      required = false;
+    }
+    
+    # Shared secrets (SOPS)
+    {
+      sops = {
+        file = ./secrets/common.sops.yaml;
+        format = "yaml";
+      };
+      required = true;
+    }
+  ];
+  
+  jobs = {
+    deploy-api = {
+      executor = platform.executors.oci { image = "node:20"; };
+      
+      # Job-level environment (overrides workflow)
+      env = {
+        SERVICE = "api";
+        PORT = "3000";
+      };
+      
+      # Job-level providers
+      envFrom = [
+        # API-specific config
+        {
+          file = ".env.api";
+          required = false;
+        }
+        
+        # API secrets from Vault
+        {
+          vault = {
+            path = "secret/data/api/production";
+            addr = "https://vault.example.com";
+          };
+          required = true;
+        }
+      ];
+      
+      actions = [
+        # Validate required variables before deployment
+        {
+          name = "validate-env";
+          bash = ''
+            # All env vars from workflow + job are available
+            echo "Environment check:"
+            echo "  CI=$CI"
+            echo "  ENVIRONMENT=$ENVIRONMENT"
+            echo "  SERVICE=$SERVICE"
+            echo "  PORT=$PORT"
+            echo "  API_KEY=***" # Secret from Vault
+            
+            # Validate required vars
+            : "''${API_KEY:?API_KEY is required}"
+            : "''${DATABASE_URL:?DATABASE_URL is required}"
+          '';
+        }
+        
+        {
+          name = "deploy";
+          # Action-level env (overrides job and workflow)
+          env = {
+            DEPLOY_TIMEOUT = "300";
+          };
+          bash = ''
+            echo "Deploying $SERVICE to $ENVIRONMENT"
+            echo "Using API_KEY from Vault"
+            ./deploy.sh
+          '';
+        }
+      ];
+    };
+    
+    deploy-worker = {
+      needs = ["deploy-api"];
+      executor = platform.executors.oci { image = "node:20"; };
+      
+      env = {
+        SERVICE = "worker";
+      };
+      
+      envFrom = [
+        # Worker-specific secrets from 1Password
+        {
+          onepassword = {
+            vault = "Production";
+            item = "Worker Secrets";
+          };
+          required = true;
+        }
+      ];
+      
+      actions = [
+        {
+          name = "deploy";
+          bash = ''
+            echo "Deploying $SERVICE"
+            # Has access to:
+            # - Workflow env (CI, ENVIRONMENT)
+            # - Workflow envFrom (common.sops.yaml)
+            # - Job env (SERVICE)
+            # - Job envFrom (1Password secrets)
+          '';
+        }
+      ];
+    };
+  };
+}
+```
+
+---
+
+### Executor Integration
+
+Executors receive a fully-populated environment and must inject it into the execution context.
+
+#### Local Executor
+
+```bash
+# Environment already in current shell
+job_deploy() {
+  # All env vars inherited
+  cd $JOB_DIR
+  ./action
+}
+```
+
+#### OCI Executor
+
+```bash
+# Pass environment to container
+job_deploy() {
+  # Create env file with all variables
+  TEMP_ENV="/tmp/nixactions-env-$WORKFLOW_ID-$JOB_NAME.env"
+  env > "$TEMP_ENV"
+  
+  # Copy to container
+  docker cp "$TEMP_ENV" "$CONTAINER_ID:/tmp/job-env.env"
+  
+  # Execute with environment
+  docker exec "$CONTAINER_ID" bash -c '
+    set -a
+    source /tmp/job-env.env
+    set +a
+    cd /workspace/jobs/deploy
+    ./action
+  '
+  
+  # Cleanup
+  rm -f "$TEMP_ENV"
+}
+```
+
+#### SSH Executor
+
+```bash
+# Transfer environment to remote
+job_deploy() {
+  # Create env file
+  TEMP_ENV="/tmp/nixactions-env-$WORKFLOW_ID-$JOB_NAME.env"
+  env > "$TEMP_ENV"
+  
+  # Copy to remote
+  scp "$TEMP_ENV" "user@remote:/tmp/job-env.env"
+  
+  # Execute with environment
+  ssh "user@remote" bash -c '
+    set -a
+    source /tmp/job-env.env
+    set +a
+    cd /workspace/jobs/deploy
+    ./action
+  '
+  
+  # Cleanup
+  rm -f "$TEMP_ENV"
+}
+```
+
+---
+
+### Security Considerations
+
+1. **Never in /nix/store**
+   - Environment values only loaded at runtime
+   - Derivations contain only paths/references
+   - Secrets never cached or shared
+
+2. **Temporary files**
+   - Env files created with `mktemp`
+   - Permissions set to `0600` (owner-only)
+   - Cleaned up after job execution
+
+3. **Logging**
+   - Secret values never logged
+   - Structured logging redacts known secret patterns
+   - Use `***` for sensitive values in output
+
+4. **Validation**
+   - Required variables checked before execution
+   - Clear error messages for missing secrets
+   - Fail fast, don't expose partial state
+
+---
+
+### Built-in Provider Actions
+
+For backward compatibility and simpler use cases, pre-built actions are available:
 
 ```nix
 # SOPS action
 platform.actions.sopsLoad {
   file = ./secrets.sops.yaml;
+  format = "yaml";  # yaml | json | dotenv
 }
-# → /nix/store/xxx-sops-load/bin/sops-load
 
 # Vault action
 platform.actions.vaultLoad {
   path = "secret/data/production";
+  addr = "https://vault.example.com";
 }
-# → /nix/store/yyy-vault-load/bin/vault-load
+
+# 1Password action
+platform.actions.opLoad {
+  vault = "Production";
+  item = "API Keys";
+}
+
+# Age decrypt action
+platform.actions.ageDecrypt {
+  file = ./secrets.age;
+  identity = ./keys/age-key.txt;
+}
+
+# Bitwarden action
+platform.actions.bwLoad {
+  itemId = "xxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx";
+}
 
 # Environment validation
-platform.actions.requireEnv ["API_KEY" "DB_PASSWORD"]
-# → /nix/store/zzz-require-env/bin/require-env
+platform.actions.requireEnv [
+  "API_KEY"
+  "DATABASE_URL"
+  "DEPLOY_TOKEN"
+]
 ```
 
-#### Example Usage
+**Usage with actions:**
 
 ```nix
-jobs = {
-  deploy = {
-    executor = platform.executors.ssh { host = "prod"; };
+jobs.deploy = {
+  actions = [
+    # Load secrets as first action
+    (platform.actions.sopsLoad {
+      file = ./secrets/prod.sops.yaml;
+      format = "yaml";
+    })
     
-    actions = [
-      # 1. Load secrets (derivation)
-      (platform.actions.sopsLoad {
-        file = ./secrets/production.sops.yaml;
-      })
-      
-      # 2. Validate secrets (derivation)
-      (platform.actions.requireEnv [
-        "API_KEY"
-        "DB_PASSWORD"
-      ])
-      
-      # 3. Use secrets (derivation)
-      (mkAction {
-        name = "deploy";
-        bash = ''
-          kubectl create secret generic app-secrets \
-            --from-literal=api-key="$API_KEY" \
-            --from-literal=db-password="$DB_PASSWORD"
-        '';
-      })
-    ];
-  };
+    # Validate secrets
+    (platform.actions.requireEnv ["API_KEY" "DB_PASSWORD"])
+    
+    # Use secrets
+    {
+      name = "deploy";
+      bash = ''
+        kubectl create secret generic app \
+          --from-literal=api-key="$API_KEY"
+      '';
+    }
+  ];
 };
 ```
+
+**Note:** Using `envFrom` is preferred over action-based secret loading as it:
+- Loads secrets before any job execution
+- Validates requirements upfront
+- Provides better error messages
+- Works uniformly across all executors
 
 ---
 
