@@ -12,6 +12,9 @@ let
   # Standard actions
   actions = import ./actions/default.nix { inherit pkgs lib; };
   
+  # Job templates
+  jobs = import ./jobs/default.nix { inherit pkgs lib actions; };
+  
   # Logging utilities
   logging = import ./logging.nix { inherit pkgs lib; };
   
@@ -27,6 +30,9 @@ in {
   
   # Export standard actions
   inherit actions;
+  
+  # Export job templates
+  inherit jobs;
   
   # Export logging utilities
   inherit logging;
