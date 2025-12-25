@@ -84,8 +84,17 @@ let
           action = action.retry or null;
         };
         
+        # Extract dependencies
+        actionDeps = action.deps or [];
+        
         drv = pkgs.writeScriptBin actionName ''
           #!${pkgs.bash}/bin/bash
+          
+          # Add dependencies to PATH
+          ${lib.optionalString (actionDeps != []) ''
+            export PATH=${lib.makeBinPath actionDeps}:$PATH
+          ''}
+          
           ${actionBash}
         '';
       in

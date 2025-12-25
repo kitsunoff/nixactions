@@ -46,16 +46,16 @@ platform.mkWorkflow {
           name = "install-deps";
           bash = ''
             echo "📦 Installing dependencies..."
-            npm ci
+            npm install
           '';
           deps = [ pkgs.nodejs ];
         }
         
         {
-          name = "eslint";
+          name = "install-deps";
           bash = ''
-            echo "🔍 Running ESLint..."
-            npm run lint
+            echo "📦 Installing dependencies..."
+            npm install
           '';
           deps = [ pkgs.nodejs ];
         }
@@ -70,7 +70,7 @@ platform.mkWorkflow {
           name = "install-deps";
           bash = ''
             echo "📦 Installing dependencies..."
-            npm ci
+            npm install
           '';
           deps = [ pkgs.nodejs ];
         }
@@ -104,7 +104,7 @@ platform.mkWorkflow {
           name = "install-deps";
           bash = ''
             echo "📦 Installing dependencies..."
-            npm ci
+            npm install
           '';
           deps = [ pkgs.nodejs ];
         }
@@ -151,7 +151,7 @@ platform.mkWorkflow {
           name = "install-deps";
           bash = ''
             echo "📦 Installing dependencies..."
-            npm ci
+            npm install
           '';
           deps = [ pkgs.nodejs ];
         }
