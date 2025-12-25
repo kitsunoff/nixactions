@@ -11,6 +11,15 @@ assert lib.assertMsg (mode == "mount" || mode == "build")
 let
   # Sanitize image name for bash variable names (replace - / : with _)
   safeName = builtins.replaceStrings ["-" "/" ":"] ["_" "_" "_"] image;
+  
+  # Import helpers
+  actionRunner = import ./action-runner.nix { inherit lib pkgs; };
+  ociHelpers = import ./oci-helpers.nix { inherit pkgs lib; };
+  
+  # Import runtime helpers for build mode
+  loggingLib = import ../logging.nix { inherit pkgs lib; };
+  retryLib = import ../retry.nix { inherit lib pkgs; };
+  runtimeHelpers = import ../runtime-helpers.nix { inherit pkgs lib; };
 in
 
 mkExecutor {
@@ -21,23 +30,9 @@ mkExecutor {
   setupWorkspace = { actionDerivations }: 
     if mode == "mount" then ''
       # Mode: MOUNT - mount /nix/store from host
-      # Lazy init - only create if not exists
-      if [ -z "''${CONTAINER_ID_OCI_${safeName}_${mode}:-}" ]; then
-        # Create and start long-running container with /nix/store mounted
-        CONTAINER_ID_OCI_${safeName}_${mode}=$(${pkgs.docker}/bin/docker create \
-          -v /nix/store:/nix/store:ro \
-          ${image} \
-          sleep infinity)
-        
-        ${pkgs.docker}/bin/docker start "$CONTAINER_ID_OCI_${safeName}_${mode}"
-        
-        export CONTAINER_ID_OCI_${safeName}_${mode}
-        
-        # Create workspace directory in container
-        ${pkgs.docker}/bin/docker exec "$CONTAINER_ID_OCI_${safeName}_${mode}" mkdir -p /workspace
-        
-        _log_workflow executor "oci-${safeName}-mount" container "$CONTAINER_ID_OCI_${safeName}_${mode}" workspace "/workspace" event "→" "Workspace created"
-      fi
+      source ${ociHelpers}/bin/nixactions-oci-executor
+      export DOCKER=${pkgs.docker}/bin/docker
+      setup_oci_workspace "${image}" "${safeName}_${mode}"
     ''
     else # mode == "build"
       let
@@ -56,6 +51,9 @@ mkExecutor {
               pkgs.findutils
               pkgs.gnugrep
               pkgs.gnused
+              loggingLib.loggingHelpers
+              retryLib.retryHelpers
+              runtimeHelpers
             ] ++ actionPaths;
           };
           
@@ -99,134 +97,43 @@ mkExecutor {
   
   # Execute job in container
   executeJob = { jobName, actionDerivations, env }: ''
-    # Ensure workspace is initialized
     if [ -z "''${CONTAINER_ID_OCI_${safeName}_${mode}:-}" ]; then
       _log_workflow executor "oci-${safeName}-${mode}" event "✗" "Workspace not initialized"
       exit 1
     fi
-    
     ${pkgs.docker}/bin/docker exec \
+      -e WORKFLOW_NAME \
+      -e NIXACTIONS_LOG_FORMAT \
       ${lib.concatMapStringsSep " " (k: "-e ${k}") (lib.attrNames env)} \
       "$CONTAINER_ID_OCI_${safeName}_${mode}" \
       bash -c ${lib.escapeShellArg ''
         set -uo pipefail
-        
-        # Create job directory
+        source /nix/store/*-nixactions-logging/bin/nixactions-logging
+        source /nix/store/*-nixactions-retry/bin/nixactions-retry
+        source /nix/store/*-nixactions-runtime/bin/nixactions-runtime
         JOB_DIR="/workspace/jobs/${jobName}"
         mkdir -p "$JOB_DIR"
         cd "$JOB_DIR"
-        
-        # Create job-specific env file INSIDE container workspace
         JOB_ENV="$JOB_DIR/.job-env"
         touch "$JOB_ENV"
         export JOB_ENV
-        
         _log_job "${jobName}" executor "oci-${safeName}-${mode}" workdir "$JOB_DIR" event "▶" "Job starting"
-        
-        
-        # Set job-level environment
         ${lib.concatStringsSep "\n" (
           lib.mapAttrsToList (k: v: 
             "export ${k}=${lib.escapeShellArg (toString v)}"
           ) env
         )}
-        
-        # Track action failures
         ACTION_FAILED=false
-        
-        # Execute action derivations as separate processes
-        ${lib.concatMapStringsSep "\n\n" (action: 
+        ${lib.concatMapStringsSep "\n" (action: 
           let
             actionName = action.passthru.name or (builtins.baseNameOf action);
-            actionCondition = 
-              if action.passthru.condition != null 
-              then action.passthru.condition 
-              else "success()";
-          in ''
-            # === ${actionName} ===
-            
-            # Check action condition
-            _should_run=true
-            ACTION_CONDITION="${actionCondition}"
-            case "$ACTION_CONDITION" in
-              'always()')
-                # Always run
-                ;;
-              'success()')
-                # Run only if no previous action failed
-                if [ "$ACTION_FAILED" = "true" ]; then
-                  _should_run=false
-                fi
-                ;;
-              'failure()')
-                # Run only if a previous action failed
-                if [ "$ACTION_FAILED" = "false" ]; then
-                  _should_run=false
-                fi
-                ;;
-              'cancelled()')
-                # Would need workflow-level cancellation support
-                _should_run=false
-                ;;
-              *)
-                # Bash script condition - evaluate it
-                if ! ($ACTION_CONDITION); then
-                  _should_run=false
-                fi
-                ;;
-            esac
-            
-            if [ "$_should_run" = "false" ]; then
-              echo "⊘ Skipping ${actionName} (condition: $ACTION_CONDITION)"
-            else
-              _log job "${jobName}" action "${actionName}" event "→" "Starting"
-              
-              # Record start time (use fallback if nanoseconds not available)
-              _action_start_ns=$(date +%s%N 2>/dev/null || date +%s)
-              
-              # Source JOB_ENV and export all variables before running action
-              set -a
-              [ -f "$JOB_ENV" ] && source "$JOB_ENV" || true
-              set +a
-              
-              # Execute action as separate process with output wrapping
-              set +e
-              if [ "$NIXACTIONS_LOG_FORMAT" = "simple" ]; then
-                # Simple format - pass through unchanged
-                ${action}/bin/${lib.escapeShellArg actionName}
-                _action_exit_code=$?
-              else
-                # Structured/JSON format - wrap each line
-                ${action}/bin/${lib.escapeShellArg actionName} 2>&1 | _log_line "${jobName}" "${actionName}"
-                _action_exit_code=''${PIPESTATUS[0]}
-              fi
-              set -e
-              
-              # Calculate duration
-              _action_end_ns=$(date +%s%N 2>/dev/null || date +%s)
-              if echo "$_action_start_ns" | grep -q "N"; then
-                # Fallback: seconds only
-                _action_duration_s=$((_action_end_ns - _action_start_ns))
-                _action_duration_ms=$((_action_duration_s * 1000))
-              else
-                # Nanoseconds available
-                _action_duration_ms=$(( (_action_end_ns - _action_start_ns) / 1000000 ))
-                _action_duration_s=$(echo "scale=3; $_action_duration_ms / 1000" | bc 2>/dev/null || echo $((_action_duration_ms / 1000)))
-              fi
-              
-              # Log result and track failure for subsequent actions
-              if [ $_action_exit_code -ne 0 ]; then
-                ACTION_FAILED=true
-                _log job "${jobName}" action "${actionName}" duration "''${_action_duration_s}s" exit_code $_action_exit_code event "✗" "Failed"
-                # Don't exit immediately - let conditions handle flow
-              else
-                _log job "${jobName}" action "${actionName}" duration "''${_action_duration_s}s" exit_code $_action_exit_code event "✓" "Completed"
-              fi
-            fi
-          ''
+          in
+            actionRunner.generateActionExecution {
+              inherit action jobName;
+              actionBinary = "${action}/bin/${lib.escapeShellArg actionName}";
+              timingCommand = "date +%s%N 2>/dev/null || date +%s";
+            }
         ) actionDerivations}
-        
-        # Fail job if any action failed
         if [ "$ACTION_FAILED" = "true" ]; then
           _log_job "${jobName}" event "✗" "Job failed due to action failures"
           exit 1

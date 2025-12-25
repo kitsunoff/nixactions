@@ -5,6 +5,7 @@
   jobs,
   env ? {},
   logging ? {},  # { format = "structured"; level = "info"; }
+  retry ? null,  # Workflow-level retry config
 }:
 
 assert lib.assertMsg (name != "") "Workflow name cannot be empty";
@@ -13,6 +14,12 @@ assert lib.assertMsg (builtins.isAttrs jobs) "jobs must be an attribute set";
 let
   # Import logging utilities
   loggingLib = import ./logging.nix { inherit pkgs lib; };
+  
+  # Import retry utilities
+  retryLib = import ./retry.nix { inherit lib pkgs; };
+  
+  # Import runtime helpers (derivation)
+  runtimeHelpers = import ./runtime-helpers.nix { inherit pkgs lib; };
   
   # Create logger for this workflow
   logger = loggingLib.mkLogger {
@@ -61,13 +68,22 @@ let
     lib.unique (lib.concatMap (a: a.deps or []) actions);
   
   # Convert action attribute to derivation if needed
-  toActionDerivation = action:
+  # Also merges retry configuration from workflow -> job -> action
+  toActionDerivation = jobRetry: action:
     if builtins.isAttrs action && !(action ? type && action.type == "derivation")
     then
       # It's an attribute, convert to derivation
       let
         actionName = action.name or "action";
         actionBash = action.bash or "echo 'No bash script provided'";
+        
+        # Merge retry configs: action > job > workflow
+        actionRetry = retryLib.mergeRetryConfigs {
+          workflow = retry;
+          job = jobRetry;
+          action = action.retry or null;
+        };
+        
         drv = pkgs.writeScriptBin actionName ''
           #!${pkgs.bash}/bin/bash
           ${actionBash}
@@ -81,6 +97,7 @@ let
             env = action.env or {};
             workdir = action.workdir or null;
             condition = action.condition or null;
+            retry = actionRetry;  # Merged retry config
           };
         }
     else
@@ -96,42 +113,40 @@ let
     let
       executor = job.executor;
       
+      # Merge retry config for this job: job > workflow
+      jobRetry = job.retry or retry;
+      
       # Convert actions to derivations (if not already)
-      actionDerivations = map toActionDerivation job.actions;
+      actionDerivations = map (toActionDerivation jobRetry) job.actions;
       
       # Job-level environment
       jobEnv = lib.attrsets.mergeAttrsList [ env (job.env or {}) ];
       
     in ''
       job_${jobName}() {
-        # Setup workspace for this job
         ${executor.setupWorkspace { inherit actionDerivations; }}
-        
         ${lib.optionalString ((job.inputs or []) != []) ''
-          # Restore artifacts on HOST before executing job
-          _log_job "${jobName}" artifacts "${toString job.inputs}" event "→" "Restoring artifacts"
-          ${lib.concatMapStringsSep "\n" (name: ''
-            ${executor.restoreArtifact { inherit name jobName; }}
-            _log_job "${jobName}" artifact "${name}" event "✓" "Restored"
-          '') job.inputs}
+        # Restore artifacts
+        _log_job "${jobName}" artifacts "${toString job.inputs}" event "→" "Restoring artifacts"
+        ${lib.concatMapStringsSep "\n" (name: ''
+        ${executor.restoreArtifact { inherit name jobName; }}
+        _log_job "${jobName}" artifact "${name}" event "✓" "Restored"
+        '') job.inputs}
         ''}
-        
-        # Execute job via executor
         ${executor.executeJob {
           inherit jobName actionDerivations;
           env = jobEnv;
         }}
-        
         ${lib.optionalString ((job.outputs or {}) != {}) ''
-          # Save artifacts on HOST after job completes
-          _log_job "${jobName}" event "→" "Saving artifacts"
-          ${lib.concatStringsSep "\n" (
-            lib.mapAttrsToList (name: path: ''
-              ${executor.saveArtifact { inherit name path jobName; }}
-              ARTIFACT_SIZE=$(du -sh "$NIXACTIONS_ARTIFACTS_DIR/${name}" 2>/dev/null | cut -f1 || echo "unknown")
-              echo "  ✓ Saved: ${name} → ${path} (''${ARTIFACT_SIZE})"
-            '') job.outputs
-          )}
+        # Save artifacts
+        _log_job "${jobName}" event "→" "Saving artifacts"
+        ${lib.concatStringsSep "\n" (
+          lib.mapAttrsToList (name: path: ''
+        ${executor.saveArtifact { inherit name path jobName; }}
+        ARTIFACT_SIZE=$(du -sh "$NIXACTIONS_ARTIFACTS_DIR/${name}" 2>/dev/null | cut -f1 || echo "unknown")
+        echo "  ✓ Saved: ${name} → ${path} (''${ARTIFACT_SIZE})"
+        '') job.outputs
+        )}
         ''}
       }
     '';
@@ -140,146 +155,29 @@ in pkgs.writeScriptBin name ''
   #!/usr/bin/env bash
   set -euo pipefail
   
-  # NixActions workflow - executors own workspace (v2)
-  
-  # Generate workflow ID
   WORKFLOW_ID="${name}-$(date +%s)-$$"
-  export WORKFLOW_ID
-  
-  # Export workflow name for logging
-  export WORKFLOW_NAME="${name}"
-  
-  # Export log format (default: structured)
+  export WORKFLOW_ID WORKFLOW_NAME="${name}"
   export NIXACTIONS_LOG_FORMAT=''${NIXACTIONS_LOG_FORMAT:-${logging.format or "structured"}}
   
-  ${loggingLib.bashFunctions}
+  source ${loggingLib.loggingHelpers}/bin/nixactions-logging
+  source ${retryLib.retryHelpers}/bin/nixactions-retry
+  source ${runtimeHelpers}/bin/nixactions-runtime
   
-  # Setup artifacts directory on control node
   NIXACTIONS_ARTIFACTS_DIR="''${NIXACTIONS_ARTIFACTS_DIR:-$HOME/.cache/nixactions/$WORKFLOW_ID/artifacts}"
   mkdir -p "$NIXACTIONS_ARTIFACTS_DIR"
   export NIXACTIONS_ARTIFACTS_DIR
   
-  # Job status tracking
   declare -A JOB_STATUS
   FAILED_JOBS=()
   WORKFLOW_CANCELLED=false
-  
-  # Trap cancellation
   trap 'WORKFLOW_CANCELLED=true; echo "⊘ Workflow cancelled"; exit 130' SIGINT SIGTERM
   
-  # Check if condition is met
-  check_condition() {
-    local condition=$1
-    
-    case "$condition" in
-      success\(\))
-        if [ ''${#FAILED_JOBS[@]} -gt 0 ]; then
-          return 1  # Has failures
-        fi
-        ;;
-      failure\(\))
-        if [ ''${#FAILED_JOBS[@]} -eq 0 ]; then
-          return 1  # No failures
-        fi
-        ;;
-      always\(\))
-        return 0  # Always run
-        ;;
-      cancelled\(\))
-        if [ "$WORKFLOW_CANCELLED" = "false" ]; then
-          return 1
-        fi
-        ;;
-      *)
-        echo "Unknown condition: $condition"
-        return 1
-        ;;
-    esac
-    
-    return 0
-  }
-  
-  # Run single job with condition check
-  run_job() {
-    local job_name=$1
-    local condition=''${2:-success()}
-    local continue_on_error=''${3:-false}
-    
-    # Check condition
-    if ! check_condition "$condition"; then
-      _log_job "$job_name" condition "$condition" event "⊘" "Skipped"
-      JOB_STATUS[$job_name]="skipped"
-      return 0
-    fi
-    
-    # Execute job in subshell (isolation by design)
-    if ( job_$job_name ); then
-      _log_job "$job_name" event "✓" "Job succeeded"
-      JOB_STATUS[$job_name]="success"
-      return 0
-    else
-      local exit_code=$?
-      _log_job "$job_name" exit_code $exit_code event "✗" "Job failed"
-      FAILED_JOBS+=("$job_name")
-      JOB_STATUS[$job_name]="failure"
-      
-      if [ "$continue_on_error" = "true" ]; then
-        _log_job "$job_name" continue_on_error true event "→" "Continuing despite failure"
-        return 0
-      else
-        return $exit_code
-      fi
-    fi
-  }
-  
-  # Run jobs in parallel
-  run_parallel() {
-    local -a job_specs=("$@")
-    local -a pids=()
-    local failed=false
-    
-    # Start all jobs
-    for spec in "''${job_specs[@]}"; do
-      IFS='|' read -r job_name condition continue_on_error <<< "$spec"
-      
-      # Run in background
-      (
-        run_job "$job_name" "$condition" "$continue_on_error"
-      ) &
-      pids+=($!)
-    done
-    
-    # Wait for all jobs
-    for pid in "''${pids[@]}"; do
-      if ! wait "$pid"; then
-        failed=true
-      fi
-    done
-    
-    if [ "$failed" = "true" ]; then
-      # Check if we should stop
-      for spec in "''${job_specs[@]}"; do
-        IFS='|' read -r job_name condition continue_on_error <<< "$spec"
-        if [ "''${JOB_STATUS[$job_name]:-unknown}" = "failure" ] && [ "$continue_on_error" != "true" ]; then
-          _log_workflow failed_job "$job_name" event "⊘" "Stopping workflow due to job failure"
-          return 1
-        fi
-      done
-    fi
-    
-    return 0
-  }
-  
-  # Job functions
-  ${lib.concatStringsSep "\n\n" 
+  ${lib.concatStringsSep "\n" 
     (lib.mapAttrsToList generateJob jobs)}
   
-  # Main execution
   main() {
     _log_workflow levels ${toString (maxDepth + 1)} event "▶" "Workflow starting"
-    
-    # Execute level by level
-    ${lib.concatMapStringsSep "\n\n" (levelIdx:
+    ${lib.concatMapStringsSep "\n" (levelIdx:
       let
         level = lib.elemAt levels levelIdx;
         levelJobs = lib.attrNames level;
@@ -287,32 +185,20 @@ in pkgs.writeScriptBin name ''
         if levelJobs == [] then ""
         else ''
           _log_workflow level ${toString levelIdx} jobs "${lib.concatStringsSep ", " levelJobs}" event "→" "Starting level"
-          
-          # Build job specs (name|condition|continueOnError)
-          run_parallel \
-             ${lib.concatMapStringsSep " \\\n    " (jobName:
-              let
-                job = level.${jobName};
-                condition = job."if" or "success()";
-                continueOnError = toString (job.continueOnError or false);
-              in
-                ''"${jobName}|${condition}|${continueOnError}"''
-            ) levelJobs} || {
-              _log_workflow level ${toString levelIdx} event "✗" "Level failed"
-              exit 1
-            }
+          run_parallel ${lib.concatMapStringsSep " " (jobName:
+            let
+              job = level.${jobName};
+              condition = job."if" or "success()";
+              continueOnError = toString (job.continueOnError or false);
+            in
+              ''"${jobName}|${condition}|${continueOnError}"''
+          ) levelJobs} || {
+            _log_workflow level ${toString levelIdx} event "✗" "Level failed"
+            exit 1
+          }
         ''
     ) (lib.range 0 maxDepth)}
-    
-    
-    
-    # Final report
-    if [ ''${#FAILED_JOBS[@]} -gt 0 ]; then
-      _log_workflow failed_jobs "''${FAILED_JOBS[*]}" event "✗" "Workflow failed"
-      exit 1
-    else
-      _log_workflow event "✓" "Workflow completed successfully"
-    fi
+    workflow_summary || exit 1
   }
   
   main "$@"

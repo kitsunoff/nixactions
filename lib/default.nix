@@ -15,6 +15,9 @@ let
   # Logging utilities
   logging = import ./logging.nix { inherit pkgs lib; };
   
+  # Retry utilities
+  retry = import ./retry.nix { inherit lib pkgs; };
+  
 in {
   # Export core constructors
   inherit mkExecutor mkWorkflow mkMatrixJobs;
@@ -27,4 +30,7 @@ in {
   
   # Export logging utilities
   inherit logging;
+  
+  # Export retry utilities
+  inherit retry;
 }

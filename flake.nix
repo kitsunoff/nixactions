@@ -68,6 +68,15 @@
           # Example: Matrix builds (compile-time job generation)
           example-matrix-builds = import ./examples/02-features/matrix-builds.nix { inherit pkgs platform; };
           
+          # Example: Retry mechanism
+          example-retry = import ./examples/02-features/retry.nix { inherit pkgs platform; };
+          
+          # Example: Retry comprehensive tests
+          test-retry-comprehensive = import ./examples/02-features/test-retry-comprehensive.nix { inherit pkgs platform; };
+          
+          # Example: Conditions comprehensive tests
+          test-conditions-comprehensive = import ./examples/02-features/test-conditions-comprehensive.nix { inherit pkgs platform; };
+          
           # ===== 03-real-world: Production pipelines =====
           
           # Example: Complete CI/CD pipeline
@@ -108,18 +117,18 @@
           
           shellHook = ''
             echo "NixActions development environment"
-            echo "Run: nix run .#example-simple"
-            echo "     nix run .#example-parallel"
-            echo "     nix run .#example-complete"
-            echo "     nix run .#example-secrets"
-            echo "     nix run .#example-test-env"
-            echo "     nix run .#example-env-sharing"
-            echo "     nix run .#example-test-isolation"
-            echo "     nix run .#example-python-ci"
-            echo "     nix run .#example-nix-shell"
-            echo "     nix run .#example-artifacts"
-            echo "     nix run .#example-multi-executor"
-            echo "     nix run .#example-matrix-builds"
+            echo ""
+            echo "Examples:"
+            echo "  nix run .#example-simple"
+            echo "  nix run .#example-parallel"
+            echo "  nix run .#example-complete"
+            echo "  nix run .#example-python-ci"
+            echo "  nix run .#example-retry"
+            echo ""
+            echo "Tests:"
+            echo "  nix run .#test-retry-comprehensive"
+            echo "  nix run .#test-conditions-comprehensive"
+            echo "  nix run .#example-test-action-conditions"
           '';
         };
       });

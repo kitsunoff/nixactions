@@ -20,13 +20,14 @@
 4. [Execution Model](#execution-model)
 5. [Actions as Derivations](#actions-as-derivations)
 6. [Conditions System](#conditions-system)
-7. [Secrets Management](#secrets-management)
-8. [Artifacts Management](#artifacts-management)
-9. [API Reference](#api-reference)
-10. [Implementation](#implementation)
-11. [User Guide](#user-guide)
-12. [Comparison](#comparison)
-13. [Roadmap](#roadmap)
+7. [Retry Mechanism](#retry-mechanism)
+8. [Secrets Management](#secrets-management)
+9. [Artifacts Management](#artifacts-management)
+10. [API Reference](#api-reference)
+11. [Implementation](#implementation)
+12. [User Guide](#user-guide)
+13. [Comparison](#comparison)
+14. [Roadmap](#roadmap)
 
 ---
 
@@ -1193,6 +1194,362 @@ jobs = {
   };
 };
 ```
+
+---
+
+## Retry Mechanism
+
+### Overview
+
+Retry mechanism для автоматического повтора failed jobs и actions.
+
+**Приоритет**: 🔥 Critical (Must-have для production)
+
+**Key features:**
+- Three-level configuration hierarchy: workflow → job → action
+- Three backoff strategies: exponential (default), linear, constant
+- Configurable min_time/max_time delays
+- Actions = Derivations (compiled at build-time, retry logic injected at runtime)
+
+---
+
+### Retry Configuration Block
+
+```nix
+retry = {
+  max_attempts = 3;           # int: Total attempts (1 = no retry, just run once)
+  backoff = "exponential";    # "exponential" | "linear" | "constant"
+  min_time = 1;               # int: Minimum delay between retries (seconds)
+  max_time = 60;              # int: Maximum delay between retries (seconds)
+}
+```
+
+### Configuration Levels (Priority: action > job > workflow)
+
+```nix
+platform.mkWorkflow {
+  name = "ci";
+  
+  # Level 1: Workflow-level retry (applies to ALL jobs)
+  retry = {
+    max_attempts = 2;
+    backoff = "exponential";
+    min_time = 1;
+    max_time = 30;
+  };
+  
+  jobs = {
+    test = {
+      # Level 2: Job-level retry (applies to ALL actions in this job)
+      # Overrides workflow-level retry
+      retry = {
+        max_attempts = 3;
+        backoff = "linear";
+        min_time = 2;
+        max_time = 60;
+      };
+      
+      actions = [
+        {
+          name = "flaky-network-call";
+          bash = "npm install";
+          
+          # Level 3: Action-level retry (highest priority)
+          # Overrides job-level retry
+          retry = {
+            max_attempts = 5;
+            backoff = "exponential";
+            min_time = 1;
+            max_time = 120;
+          };
+        }
+        
+        {
+          name = "unit-tests";
+          bash = "npm test";
+          # No action-level retry → inherits from job-level
+        }
+      ];
+    };
+    
+    deploy = {
+      # Disable retry for this job
+      retry = null;
+      
+      actions = [{
+        bash = "kubectl apply -f prod/";
+        # No retry even if workflow-level retry is set
+      }];
+    };
+  };
+}
+```
+
+---
+
+### Backoff Strategies
+
+#### 1. Exponential Backoff (Default)
+
+**Formula**: `delay = min(max_time, min_time * 2^(attempt-1))`
+
+**Example** (min_time=1, max_time=60):
+```
+Attempt 1 → delay 1s   (1 * 2^0 = 1)
+Attempt 2 → delay 2s   (1 * 2^1 = 2)
+Attempt 3 → delay 4s   (1 * 2^2 = 4)
+Attempt 4 → delay 8s   (1 * 2^3 = 8)
+Attempt 5 → delay 16s  (1 * 2^4 = 16)
+Attempt 6 → delay 32s  (1 * 2^5 = 32)
+Attempt 7 → delay 60s  (1 * 2^6 = 64, capped at max_time)
+```
+
+**Use Case**: Network calls, API requests (prevents thundering herd)
+
+#### 2. Linear Backoff
+
+**Formula**: `delay = min(max_time, min_time * attempt)`
+
+**Example** (min_time=2, max_time=60):
+```
+Attempt 1 → delay 2s   (2 * 1 = 2)
+Attempt 2 → delay 4s   (2 * 2 = 4)
+Attempt 3 → delay 6s   (2 * 3 = 6)
+Attempt 4 → delay 8s   (2 * 4 = 8)
+Attempt 5 → delay 10s  (2 * 5 = 10)
+```
+
+**Use Case**: Predictable retry intervals
+
+#### 3. Constant Backoff
+
+**Formula**: `delay = min_time`
+
+**Example** (min_time=5):
+```
+Attempt 1 → delay 5s
+Attempt 2 → delay 5s
+Attempt 3 → delay 5s
+Attempt 4 → delay 5s
+```
+
+**Use Case**: Simple polling, fixed retry intervals
+
+---
+
+### Implementation Details
+
+#### Merge Strategy
+
+```nix
+# Priority: action > job > workflow
+finalRetry = actionRetry or jobRetry or workflowRetry or null
+
+# If retry.max_attempts == 1 → no retry (single attempt)
+# If retry == null → no retry
+```
+
+#### Defaults
+
+```nix
+{
+  max_attempts = 1;        # No retry by default
+  backoff = "exponential"; # Exponential if retry enabled
+  min_time = 1;            # 1 second minimum
+  max_time = 60;           # 60 seconds maximum
+}
+```
+
+#### Retry Wrapper Integration
+
+Retry logic is implemented via bash functions injected into the compiled workflow:
+
+```bash
+# lib/retry.nix provides bash functions
+retry_with_backoff() {
+  local max_attempts=$1
+  local backoff=$2
+  local min_time=$3
+  local max_time=$4
+  shift 4
+  
+  local attempt=1
+  while [ $attempt -le $max_attempts ]; do
+    if "$@"; then
+      return 0
+    fi
+    
+    if [ $attempt -lt $max_attempts ]; then
+      local delay=$(calculate_delay $attempt "$backoff" $min_time $max_time)
+      sleep $delay
+    fi
+    
+    attempt=$((attempt + 1))
+  done
+  
+  return 1
+}
+
+# lib/executors/action-runner.nix wraps action execution
+if [ -n "${retry_max_attempts:-}" ]; then
+  retry_with_backoff \
+    "$retry_max_attempts" \
+    "${retry_backoff:-exponential}" \
+    "${retry_min_time:-1}" \
+    "${retry_max_time:-60}" \
+    ${action}/bin/${action.passthru.name}
+else
+  ${action}/bin/${action.passthru.name}
+fi
+```
+
+---
+
+### Structured Logging
+
+#### Retry Events
+
+```bash
+# Structured format (default)
+[2025-12-24T12:00:00.123Z] [workflow:ci] [job:test] [action:npm-install] [attempt:1/3] Starting
+[2025-12-24T12:00:05.456Z] [workflow:ci] [job:test] [action:npm-install] [attempt:1/3] Failed (exit: 1)
+[2025-12-24T12:00:05.457Z] [workflow:ci] [job:test] [action:npm-install] [retry] Waiting 1s before attempt 2/3 (backoff: exponential)
+[2025-12-24T12:00:06.457Z] [workflow:ci] [job:test] [action:npm-install] [attempt:2/3] Starting
+[2025-12-24T12:00:08.789Z] [workflow:ci] [job:test] [action:npm-install] [attempt:2/3] Failed (exit: 1)
+[2025-12-24T12:00:08.790Z] [workflow:ci] [job:test] [action:npm-install] [retry] Waiting 2s before attempt 3/3 (backoff: exponential)
+[2025-12-24T12:00:10.790Z] [workflow:ci] [job:test] [action:npm-install] [attempt:3/3] Starting
+[2025-12-24T12:00:12.123Z] [workflow:ci] [job:test] [action:npm-install] [attempt:3/3] Success (duration: 1.333s, total_attempts: 3)
+```
+
+#### JSON Format
+
+```json
+{"timestamp":"2025-12-24T12:00:00.123Z","workflow":"ci","job":"test","action":"npm-install","event":"start","attempt":1,"max_attempts":3}
+{"timestamp":"2025-12-24T12:00:05.456Z","workflow":"ci","job":"test","action":"npm-install","event":"failed","attempt":1,"exit_code":1}
+{"timestamp":"2025-12-24T12:00:05.457Z","workflow":"ci","job":"test","action":"npm-install","event":"retry","next_attempt":2,"delay_seconds":1,"backoff":"exponential"}
+{"timestamp":"2025-12-24T12:00:12.123Z","workflow":"ci","job":"test","action":"npm-install","event":"success","attempt":3,"duration_ms":1333,"total_attempts":3}
+```
+
+---
+
+### Example Usage
+
+#### Basic Retry
+
+```nix
+{
+  actions = [{
+    name = "flaky-test";
+    bash = "npm test";
+    retry = {
+      max_attempts = 3;
+      backoff = "exponential";
+      min_time = 1;
+      max_time = 60;
+    };
+  }];
+}
+```
+
+#### Workflow-wide Retry
+
+```nix
+platform.mkWorkflow {
+  name = "ci";
+  
+  retry = {
+    max_attempts = 2;
+    backoff = "exponential";
+    min_time = 1;
+    max_time = 30;
+  };
+  
+  jobs = {
+    test.actions = [{ bash = "npm test"; }];
+    lint.actions = [{ bash = "npm run lint"; }];
+    # Both inherit workflow-level retry
+  };
+}
+```
+
+#### Selective Retry
+
+```nix
+{
+  jobs = {
+    test = {
+      retry = {
+        max_attempts = 3;
+        backoff = "exponential";
+        min_time = 1;
+        max_time = 60;
+      };
+      
+      actions = [
+        { bash = "npm install"; }  # Retries enabled
+        { bash = "npm test"; }     # Retries enabled
+        {
+          bash = "npm run deploy";
+          retry = null;            # NO retry for deploy
+        }
+      ];
+    };
+  };
+}
+```
+
+---
+
+### Edge Cases
+
+#### 1. max_attempts = 1
+
+```nix
+retry = {
+  max_attempts = 1;  # Single attempt, no retries
+  backoff = "exponential";
+  min_time = 1;
+  max_time = 60;
+}
+
+# Equivalent to: retry = null
+```
+
+#### 2. retry = null
+
+```nix
+retry = null;  # Explicitly disable retry
+```
+
+#### 3. Empty retry block
+
+```nix
+retry = {};  # Uses all defaults (max_attempts = 1 → no retry)
+```
+
+---
+
+### Testing
+
+Comprehensive test suite available in `examples/02-features/test-retry-comprehensive.nix`:
+
+- Exponential backoff success
+- Linear backoff success
+- Constant backoff success
+- Retry exhausted scenarios
+- Max attempts = 1 (no retry)
+- Retry = null (disabled)
+- Workflow-level inheritance
+- Job-level override
+- Action-level override
+- Timing verification
+
+**Run tests:**
+```bash
+nix run .#test-retry-comprehensive
+```
+
+**Coverage:** 23/23 retry features (100%)
 
 ---
 

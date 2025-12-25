@@ -1,13 +1,18 @@
 { pkgs, lib }:
 
-{
+rec {
   # ============================================================
-  # Bash Logging Functions (to be injected into workflow script)
+  # Logging Helpers Derivation
   # ============================================================
   
-  # Generate bash code for logging functions
-  # These will be available in the workflow execution environment
-  bashFunctions = ''
+  # Derivation with logging functions
+  loggingHelpers = pkgs.writeScriptBin "nixactions-logging" ''
+    #!${pkgs.bash}/bin/bash
+    
+    # ============================================================
+    # Structured Logging Functions
+    # ============================================================
+    
     # ============================================================
     # Structured Logging Functions
     # ============================================================
@@ -113,11 +118,25 @@
       _log "$@"
     }
     
-    # Export functions so they're available in subshells and executors
+    # ============================================================
+    # Export functions
+    # ============================================================
+    
     export -f _log_timestamp
     export -f _log
     export -f _log_line
     export -f _log_job
     export -f _log_workflow
+  '';
+  
+  # ============================================================
+  # Legacy: Bash Functions String (for backward compatibility)
+  # ============================================================
+  
+  # DEPRECATED: Use loggingHelpers derivation instead
+  # This is kept for backward compatibility during migration
+  bashFunctions = ''
+    # DEPRECATED: Import from derivation instead
+    # source ${loggingHelpers}/bin/nixactions-logging
   '';
 }

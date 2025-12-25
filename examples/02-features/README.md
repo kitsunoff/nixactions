@@ -2,6 +2,8 @@
 
 Advanced features and specific capabilities.
 
+---
+
 ## Examples
 
 ### `test-action-conditions.nix`
@@ -22,6 +24,32 @@ nix run ..#example-test-action-conditions
 - 5 jobs testing different condition types
 - Sequential execution with dependencies
 - Expected failures handled gracefully
+
+---
+
+### `retry.nix`
+**Retry mechanism** - automatic retry on failures.
+
+```bash
+nix run ..#example-retry
+```
+
+**What it demonstrates:**
+- Workflow/job/action-level retry configuration
+- Three backoff strategies: exponential, linear, constant
+- Configurable min/max delays
+- Retry disabled (`retry = null`)
+- Single attempt (`max_attempts = 1`)
+
+**Example:**
+```nix
+retry = {
+  max_attempts = 3;
+  backoff = "exponential";  # "exponential" | "linear" | "constant"
+  min_time = 1;             # seconds
+  max_time = 60;            # seconds
+};
+```
 
 ---
 
@@ -203,16 +231,178 @@ nix run ..#example-structured-logging
 
 ---
 
+## Comprehensive Test Suite
+
+### `test-retry-comprehensive.nix`
+
+Tests all aspects of the retry mechanism (10 test jobs):
+
+```bash
+nix run ..#test-retry-comprehensive
+```
+
+**Tests Included:**
+1. ✅ Exponential backoff (3 attempts, 1s → 2s delays)
+2. ✅ Linear backoff (2 attempts, 1s → 2s delays)
+3. ✅ Constant backoff (2 attempts, 2s delays)
+4. ✅ Retry exhausted (all attempts fail)
+5. ✅ No retry (`max_attempts = 1`)
+6. ✅ Retry disabled (`retry = null`)
+7. ✅ Max delay cap (delays capped at max_time)
+8. ✅ Job-level retry inheritance
+9. ✅ Action overrides job retry
+10. ✅ Timing verification
+
+**Expected:** All 10 jobs succeed, demonstrating all retry scenarios.
+
+---
+
+### `test-conditions-comprehensive.nix`
+
+Tests all action condition types and bash expressions (10 test jobs):
+
+```bash
+nix run ..#test-conditions-comprehensive
+```
+
+**Tests Included:**
+1. ✅ `success()` condition
+2. ✅ `failure()` condition
+3. ✅ `always()` condition
+4. ✅ Bash environment conditions (`[ "$VAR" = "value" ]`)
+5. ✅ Complex bash (numeric, pattern matching, file checks)
+6. ✅ Logical AND/OR conditions
+7. ✅ Command substitution in conditions
+8. ✅ Mixed condition sequences
+9. ✅ Empty/unset variable checks
+10. ✅ Condition evaluation order
+
+**Expected:** All 10 jobs succeed, various actions skip/run based on conditions.
+
+---
+
+## Test Coverage Summary
+
+### Retry Mechanism (11/11 features):
+
+| Feature | Tested |
+|---------|--------|
+| Exponential backoff | ✅ |
+| Linear backoff | ✅ |
+| Constant backoff | ✅ |
+| Max delay cap | ✅ |
+| Retry exhausted | ✅ |
+| `max_attempts = 1` | ✅ |
+| `retry = null` | ✅ |
+| Job-level retry | ✅ |
+| Action-level retry | ✅ |
+| Override hierarchy | ✅ |
+| Timing verification | ✅ |
+
+### Conditions (12/12 features):
+
+| Feature | Tested |
+|---------|--------|
+| `success()` | ✅ |
+| `failure()` | ✅ |
+| `always()` | ✅ |
+| Bash string comparison | ✅ |
+| Bash numeric comparison | ✅ |
+| Bash pattern matching | ✅ |
+| Bash file checks | ✅ |
+| AND logic | ✅ |
+| OR logic | ✅ |
+| Command substitution | ✅ |
+| Empty/unset variables | ✅ |
+| Evaluation order | ✅ |
+
+---
+
+## Running All Tests
+
+```bash
+# Feature examples
+nix run ..#example-test-action-conditions
+nix run ..#example-retry
+nix run ..#example-artifacts
+nix run ..#example-matrix-builds
+nix run ..#example-structured-logging
+
+# Comprehensive test suites
+nix run ..#test-retry-comprehensive
+nix run ..#test-conditions-comprehensive
+```
+
+---
+
+## Adding New Tests
+
+To add new test cases:
+
+1. Add new job to appropriate test file
+2. Ensure job has clear test description
+3. Use descriptive action names
+4. Add expected behavior comments
+5. Test edge cases
+6. Verify in isolation first
+7. Run full test suite
+
+Example:
+
+```nix
+test-new-feature = {
+  executor = platform.executors.local;
+  needs = ["previous-test"];
+  
+  actions = [
+    {
+      name = "test-new-behavior";
+      bash = ''
+        echo "Testing new feature..."
+        # Test implementation
+      '';
+      retry = {
+        max_attempts = 3;
+        backoff = "exponential";
+        min_time = 1;
+        max_time = 10;
+      };
+    }
+  ];
+};
+```
+
+---
+
 ## Feature Matrix
 
-| Feature | Example |
-|---------|---------|
-| Action conditions | test-action-conditions.nix |
-| Artifacts | artifacts-simple.nix, artifacts-paths.nix |
-| Secrets | secrets.nix |
-| Dynamic packages | nix-shell.nix |
-| Multiple executors | multi-executor.nix |
-| Environment variables | test-env.nix |
-| Job isolation | test-isolation.nix |
-| Matrix builds | matrix-builds.nix |
-| Structured logging | structured-logging.nix |
+| Feature | Example | Test Suite |
+|---------|---------|------------|
+| Action conditions | test-action-conditions.nix | test-conditions-comprehensive.nix |
+| Retry mechanism | retry.nix | test-retry-comprehensive.nix |
+| Artifacts | artifacts-simple.nix, artifacts-paths.nix | - |
+| Secrets | secrets.nix | - |
+| Dynamic packages | nix-shell.nix | - |
+| Multiple executors | multi-executor.nix | - |
+| Environment variables | test-env.nix | - |
+| Job isolation | test-isolation.nix | - |
+| Matrix builds | matrix-builds.nix | - |
+| Structured logging | structured-logging.nix | - |
+
+---
+
+## Known Limitations
+
+1. **Timing Tests**: May be flaky on slow systems
+2. **State Files**: Use `$WORKFLOW_ID` for uniqueness across parallel runs
+3. **Exit Codes**: Failed tests use `continueOnError = true`
+
+---
+
+## Continuous Integration
+
+These tests should be run:
+- ✅ Before commits
+- ✅ In CI/CD pipeline
+- ✅ After refactoring
+- ✅ When adding new features

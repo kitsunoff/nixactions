@@ -235,6 +235,12 @@ All core features implemented:
 - ✅ 10 working examples
 - ✅ Flake packaging
 - ✅ Comprehensive documentation
+- ✅ **CODEGEN OPTIMIZATION** (Dec 25, 2025) - Reduced generated workflow sizes by ~88%!
+  - Refactored inline bash functions into Nix derivations
+  - Created `lib/runtime-helpers.nix` with core workflow functions
+  - Created `lib/executors/local-helpers.nix` and `lib/executors/oci-helpers.nix`
+  - Converted `lib/logging.nix` and `lib/retry.nix` to derivations
+  - Results: simple (692→56 lines), complete (1670→220), matrix-builds (2347→445), python-ci (2296→241)
 
 **Next Step: Phase 2 - Testing & Validation**
 

@@ -6,33 +6,74 @@
 
 ## 🔥 Critical (Must-have для production)
 
-### 1. **Retry Failed Jobs/Actions**
+### 1. **Retry Failed Jobs/Actions** ✅ IMPLEMENTED
 ```nix
 {
-  actions = [{
-    name = "flaky-test";
-    bash = "npm test";
-    retry = {
-      max_attempts = 3;
-      backoff = "exponential";  # 1s, 2s, 4s
+  # Workflow-level retry (applies to all jobs/actions)
+  retry = {
+    max_attempts = 3;
+    backoff = "exponential";  # "exponential" | "linear" | "constant"
+    min_time = 1;             # seconds
+    max_time = 60;            # seconds
+  };
+  
+  jobs = {
+    test = {
+      # Job-level retry (overrides workflow)
+      retry = {
+        max_attempts = 5;
+        backoff = "linear";
+        min_time = 2;
+        max_time = 30;
+      };
+      
+      actions = [
+        {
+          name = "flaky-test";
+          bash = "npm test";
+          # Action-level retry (highest priority)
+          retry = {
+            max_attempts = 3;
+            backoff = "exponential";
+            min_time = 1;
+            max_time = 60;
+          };
+        }
+      ];
     };
-  }];
+  };
 }
 ```
 
-**Почему важно:**
-- Сетевые запросы фейлятся (npm install, docker pull)
-- Тесты могут быть flaky
-- External API могут быть недоступны временно
+**Реализовано:**
+- ✅ Три уровня конфигурации: workflow > job > action
+- ✅ Три backoff стратегии: exponential, linear, constant
+- ✅ Настраиваемые min_time и max_time задержки
+- ✅ Structured logging для retry events
+- ✅ Поддержка в local executor
+- ✅ Пример: `nix run .#example-retry`
 
-**Альтернатива сейчас:**
+**Использование:**
 ```bash
-bash = ''
-  for i in {1..3}; do
-    npm test && break
-    sleep $((i * 2))
-  done
-''
+# Run retry example
+nix run .#example-retry
+
+# Logs show:
+# [retry:waiting] attempt=1/3 next_attempt=2 delay=1s backoff=exponential
+# [retry:waiting] attempt=2/3 next_attempt=3 delay=2s backoff=exponential
+# [retry:exhausted] attempts=3 exit_code=1
+```
+
+**Backoff формулы:**
+```
+exponential: min(max_time, min_time * 2^(attempt-1))
+  → 1s, 2s, 4s, 8s, 16s, ...
+
+linear: min(max_time, min_time * attempt)
+  → 2s, 4s, 6s, 8s, 10s, ...
+
+constant: min_time
+  → 3s, 3s, 3s, 3s, ...
 ```
 
 ---
@@ -999,11 +1040,11 @@ Running tests...
 ## 📊 Приоритизация
 
 ### Must Have (для 1.0)
-1. Retry
+1. ~~Retry~~ ✅
 2. Timeout
 3. Cancellation
 4. Better errors
-5. Structured logging
+5. ~~Structured logging~~ ✅
 
 ### Should Have (для 2.0)
 6. Job outputs
