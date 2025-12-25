@@ -41,8 +41,8 @@
           # Example: Action-level conditions
           example-test-action-conditions = import ./examples/02-features/test-action-conditions.nix { inherit pkgs platform; };
           
-          # Example: Artifacts - declarative API
-          example-artifacts = import ./examples/02-features/artifacts-simple.nix { inherit pkgs platform; };
+          # Example: Artifacts - comprehensive test suite (simple, custom paths, mixed)
+          example-artifacts = import ./examples/02-features/artifacts.nix { inherit pkgs platform; };
           
           # Example: Artifacts with nested paths
           example-artifacts-paths = import ./examples/02-features/artifacts-paths.nix { inherit pkgs platform; };

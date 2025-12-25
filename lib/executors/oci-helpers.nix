@@ -129,12 +129,18 @@ pkgs.writeScriptBin "nixactions-oci-executor" ''
   }
   
   # Restore artifact from HOST storage to OCI container
-  # Usage: restore_oci_artifact ARTIFACT_NAME JOB_NAME EXECUTOR_NAME
+  # Usage: restore_oci_artifact ARTIFACT_NAME TARGET_PATH JOB_NAME EXECUTOR_NAME
+  # Args:
+  #   - artifact_name: Name of the artifact to restore
+  #   - target_path: Where to restore in job dir (e.g., "." for root, "lib/" for subdir)
+  #   - job_name: Name of the job
+  #   - executor_name: OCI executor identifier
   # Expects: $CONTAINER_ID_OCI_<normalized_name>, $NIXACTIONS_ARTIFACTS_DIR, $DOCKER
   restore_oci_artifact() {
     local name=$1
-    local job_name=$2
-    local executor_name=$3
+    local target_path=$2
+    local job_name=$3
+    local executor_name=$4
     local var_name="CONTAINER_ID_OCI_''${executor_name}"
     local container_id="''${!var_name}"
     
@@ -149,12 +155,26 @@ pkgs.writeScriptBin "nixactions-oci-executor" ''
       # Create job directory in container
       "$DOCKER" exec "$container_id" mkdir -p "$job_dir"
       
-      # Copy each file/directory from artifact to container
-      for item in "$NIXACTIONS_ARTIFACTS_DIR/$name"/*; do
-        if [ -e "$item" ]; then
-          "$DOCKER" cp "$item" "$container_id:$job_dir/"
-        fi
-      done
+      # Determine target directory
+      if [ "$target_path" = "." ] || [ "$target_path" = "./" ]; then
+        # Restore to root of job directory (default behavior)
+        for item in "$NIXACTIONS_ARTIFACTS_DIR/$name"/*; do
+          if [ -e "$item" ]; then
+            "$DOCKER" cp "$item" "$container_id:$job_dir/"
+          fi
+        done
+      else
+        # Restore to custom path
+        local target_dir="$job_dir/$target_path"
+        "$DOCKER" exec "$container_id" mkdir -p "$target_dir"
+        
+        for item in "$NIXACTIONS_ARTIFACTS_DIR/$name"/*; do
+          if [ -e "$item" ]; then
+            "$DOCKER" cp "$item" "$container_id:$target_dir/"
+          fi
+        done
+      fi
+      
       return 0
     else
       _log_workflow artifact "$name" event "✗" "Artifact not found"

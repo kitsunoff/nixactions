@@ -19,7 +19,7 @@ WORKFLOW_CANCELLED=false
 trap 'WORKFLOW_CANCELLED=true; echo "⊘ Workflow cancelled"; exit 130' SIGINT SIGTERM
 
 job_build() {
-      source /nix/store/f26psz5whxf06q1ba3yxvq874lpr2xal-nixactions-local-executor/bin/nixactions-local-executor
+      source /nix/store/gjwg64hal8wgjdz7mmhgdyq4c7qbqpfr-nixactions-local-executor/bin/nixactions-local-executor
 setup_local_workspace
   
       setup_local_job "build"
@@ -49,13 +49,13 @@ echo "  ✓ Saved: build-info → dist/ (${ARTIFACT_SIZE})"
 }
 
 job_calculate() {
-      source /nix/store/f26psz5whxf06q1ba3yxvq874lpr2xal-nixactions-local-executor/bin/nixactions-local-executor
+      source /nix/store/gjwg64hal8wgjdz7mmhgdyq4c7qbqpfr-nixactions-local-executor/bin/nixactions-local-executor
 setup_local_workspace
   # Restore artifacts
 _log_job "calculate" artifacts "build-info" event "→" "Restoring artifacts"
-restore_local_artifact "build-info" "calculate"
+restore_local_artifact "build-info" "." "calculate"
 
-_log_job "calculate" artifact "build-info" event "✓" "Restored"
+_log_job "calculate" artifact "build-info" path "." event "✓" "Restored"
 
 
       setup_local_job "calculate"
@@ -75,7 +75,7 @@ fi
 }
 
 job_summary() {
-      source /nix/store/f26psz5whxf06q1ba3yxvq874lpr2xal-nixactions-local-executor/bin/nixactions-local-executor
+      source /nix/store/gjwg64hal8wgjdz7mmhgdyq4c7qbqpfr-nixactions-local-executor/bin/nixactions-local-executor
 setup_local_workspace
   
       setup_local_job "summary"
@@ -92,13 +92,13 @@ fi
 }
 
 job_test-advanced() {
-      source /nix/store/f26psz5whxf06q1ba3yxvq874lpr2xal-nixactions-local-executor/bin/nixactions-local-executor
+      source /nix/store/gjwg64hal8wgjdz7mmhgdyq4c7qbqpfr-nixactions-local-executor/bin/nixactions-local-executor
 setup_local_workspace
   # Restore artifacts
 _log_job "test-advanced" artifacts "build-info" event "→" "Restoring artifacts"
-restore_local_artifact "build-info" "test-advanced"
+restore_local_artifact "build-info" "." "test-advanced"
 
-_log_job "test-advanced" artifact "build-info" event "✓" "Restored"
+_log_job "test-advanced" artifact "build-info" path "." event "✓" "Restored"
 
 
       setup_local_job "test-advanced"

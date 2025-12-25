@@ -175,7 +175,7 @@ mkExecutor {
   
   # Restore artifact (executed on HOST before job starts)
   # Uses docker cp to copy from host to container
-  restoreArtifact = { name, jobName }: ''
+  restoreArtifact = { name, path ? ".", jobName }: ''
     if [ -z "''${CONTAINER_ID_OCI_${safeName}_${mode}:-}" ]; then
       _log_workflow event "✗" "Container not initialized"
       return 1
@@ -184,15 +184,27 @@ mkExecutor {
     if [ -e "$NIXACTIONS_ARTIFACTS_DIR/${name}" ]; then
       JOB_DIR="/workspace/jobs/${jobName}"
       
-      # Ensure job directory exists in container
-      ${pkgs.docker}/bin/docker exec "$CONTAINER_ID_OCI_${safeName}_${mode}" mkdir -p "$JOB_DIR"
-      
-      # Copy each file/directory from artifact to container
-      for item in "$NIXACTIONS_ARTIFACTS_DIR/${name}"/*; do
-        if [ -e "$item" ]; then
-          ${pkgs.docker}/bin/docker cp "$item" "$CONTAINER_ID_OCI_${safeName}_${mode}:$JOB_DIR/"
-        fi
-      done
+      # Determine target directory
+      if [ "${path}" = "." ] || [ "${path}" = "./" ]; then
+        # Restore to root of job directory (default behavior)
+        ${pkgs.docker}/bin/docker exec "$CONTAINER_ID_OCI_${safeName}_${mode}" mkdir -p "$JOB_DIR"
+        
+        for item in "$NIXACTIONS_ARTIFACTS_DIR/${name}"/*; do
+          if [ -e "$item" ]; then
+            ${pkgs.docker}/bin/docker cp "$item" "$CONTAINER_ID_OCI_${safeName}_${mode}:$JOB_DIR/"
+          fi
+        done
+      else
+        # Restore to custom path
+        TARGET_DIR="$JOB_DIR/${path}"
+        ${pkgs.docker}/bin/docker exec "$CONTAINER_ID_OCI_${safeName}_${mode}" mkdir -p "$TARGET_DIR"
+        
+        for item in "$NIXACTIONS_ARTIFACTS_DIR/${name}"/*; do
+          if [ -e "$item" ]; then
+            ${pkgs.docker}/bin/docker cp "$item" "$CONTAINER_ID_OCI_${safeName}_${mode}:$TARGET_DIR/"
+          fi
+        done
+      fi
     else
       _log_workflow artifact "${name}" event "✗" "Artifact not found"
       return 1

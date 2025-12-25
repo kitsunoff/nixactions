@@ -19,7 +19,7 @@ WORKFLOW_CANCELLED=false
 trap 'WORKFLOW_CANCELLED=true; echo "⊘ Workflow cancelled"; exit 130' SIGINT SIGTERM
 
 job_build-local() {
-      source /nix/store/f26psz5whxf06q1ba3yxvq874lpr2xal-nixactions-local-executor/bin/nixactions-local-executor
+      source /nix/store/gjwg64hal8wgjdz7mmhgdyq4c7qbqpfr-nixactions-local-executor/bin/nixactions-local-executor
 setup_local_workspace
   
       setup_local_job "build-local"
@@ -44,7 +44,7 @@ echo "  ✓ Saved: local-dist → dist/ (${ARTIFACT_SIZE})"
 
 job_build-oci() {
   # Mode: MOUNT - mount /nix/store from host
-source /nix/store/zykjlvbsxgafrj0j52rsiwg67piyh9hj-nixactions-oci-executor/bin/nixactions-oci-executor
+source /nix/store/wl2bxzccsz9d2bmnjmknqzmqgy01liar-nixactions-oci-executor/bin/nixactions-oci-executor
 export DOCKER=/nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker
 setup_oci_workspace "nixos/nix" "nixos_nix_mount"
 
@@ -116,17 +116,17 @@ echo "  ✓ Saved: oci-dist → dist/ (${ARTIFACT_SIZE})"
 }
 
 job_compare() {
-      source /nix/store/f26psz5whxf06q1ba3yxvq874lpr2xal-nixactions-local-executor/bin/nixactions-local-executor
+      source /nix/store/gjwg64hal8wgjdz7mmhgdyq4c7qbqpfr-nixactions-local-executor/bin/nixactions-local-executor
 setup_local_workspace
   # Restore artifacts
 _log_job "compare" artifacts "local-dist oci-dist" event "→" "Restoring artifacts"
-restore_local_artifact "local-dist" "compare"
+restore_local_artifact "local-dist" "." "compare"
 
-_log_job "compare" artifact "local-dist" event "✓" "Restored"
+_log_job "compare" artifact "local-dist" path "." event "✓" "Restored"
 
-restore_local_artifact "oci-dist" "compare"
+restore_local_artifact "oci-dist" "." "compare"
 
-_log_job "compare" artifact "oci-dist" event "✓" "Restored"
+_log_job "compare" artifact "oci-dist" path "." event "✓" "Restored"
 
 
       setup_local_job "compare"

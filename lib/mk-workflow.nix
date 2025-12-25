@@ -108,6 +108,12 @@ let
         };
       };
   
+  # Normalize input specification to { name, path } format
+  normalizeInput = input:
+    if builtins.isString input
+    then { name = input; path = "."; }  # Simple string -> default path
+    else input;  # Already attribute set
+  
   # Generate single job bash function
   generateJob = jobName: job:
     let
@@ -122,16 +128,23 @@ let
       # Job-level environment
       jobEnv = lib.attrsets.mergeAttrsList [ env (job.env or {}) ];
       
+      # Normalize inputs to { name, path } format
+      normalizedInputs = map normalizeInput (job.inputs or []);
+      
     in ''
       job_${jobName}() {
         ${executor.setupWorkspace { inherit actionDerivations; }}
-        ${lib.optionalString ((job.inputs or []) != []) ''
+        ${lib.optionalString (normalizedInputs != []) ''
         # Restore artifacts
-        _log_job "${jobName}" artifacts "${toString job.inputs}" event "→" "Restoring artifacts"
-        ${lib.concatMapStringsSep "\n" (name: ''
-        ${executor.restoreArtifact { inherit name jobName; }}
-        _log_job "${jobName}" artifact "${name}" event "✓" "Restored"
-        '') job.inputs}
+        _log_job "${jobName}" artifacts "${toString (map (i: i.name) normalizedInputs)}" event "→" "Restoring artifacts"
+        ${lib.concatMapStringsSep "\n" (input: ''
+        ${executor.restoreArtifact { 
+          name = input.name; 
+          path = input.path; 
+          inherit jobName; 
+        }}
+        _log_job "${jobName}" artifact "${input.name}" path "${input.path}" event "✓" "Restored"
+        '') normalizedInputs}
         ''}
         ${executor.executeJob {
           inherit jobName actionDerivations;

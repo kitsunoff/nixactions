@@ -171,21 +171,33 @@ fi
 if [ -e "$NIXACTIONS_ARTIFACTS_DIR/dist" ]; then
   JOB_DIR="/workspace/jobs/test"
   
-  # Ensure job directory exists in container
-  /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker exec "$CONTAINER_ID_OCI_alpine_build" mkdir -p "$JOB_DIR"
-  
-  # Copy each file/directory from artifact to container
-  for item in "$NIXACTIONS_ARTIFACTS_DIR/dist"/*; do
-    if [ -e "$item" ]; then
-      /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker cp "$item" "$CONTAINER_ID_OCI_alpine_build:$JOB_DIR/"
-    fi
-  done
+  # Determine target directory
+  if [ "." = "." ] || [ "." = "./" ]; then
+    # Restore to root of job directory (default behavior)
+    /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker exec "$CONTAINER_ID_OCI_alpine_build" mkdir -p "$JOB_DIR"
+    
+    for item in "$NIXACTIONS_ARTIFACTS_DIR/dist"/*; do
+      if [ -e "$item" ]; then
+        /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker cp "$item" "$CONTAINER_ID_OCI_alpine_build:$JOB_DIR/"
+      fi
+    done
+  else
+    # Restore to custom path
+    TARGET_DIR="$JOB_DIR/."
+    /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker exec "$CONTAINER_ID_OCI_alpine_build" mkdir -p "$TARGET_DIR"
+    
+    for item in "$NIXACTIONS_ARTIFACTS_DIR/dist"/*; do
+      if [ -e "$item" ]; then
+        /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker cp "$item" "$CONTAINER_ID_OCI_alpine_build:$TARGET_DIR/"
+      fi
+    done
+  fi
 else
   _log_workflow artifact "dist" event "✗" "Artifact not found"
   return 1
 fi
 
-_log_job "test" artifact "dist" event "✓" "Restored"
+_log_job "test" artifact "dist" path "." event "✓" "Restored"
 
 if [ -z "${CONTAINER_ID_OCI_alpine_build:-}" ]; then
   _log_workflow event "✗" "Container not initialized"
@@ -195,21 +207,33 @@ fi
 if [ -e "$NIXACTIONS_ARTIFACTS_DIR/myapp" ]; then
   JOB_DIR="/workspace/jobs/test"
   
-  # Ensure job directory exists in container
-  /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker exec "$CONTAINER_ID_OCI_alpine_build" mkdir -p "$JOB_DIR"
-  
-  # Copy each file/directory from artifact to container
-  for item in "$NIXACTIONS_ARTIFACTS_DIR/myapp"/*; do
-    if [ -e "$item" ]; then
-      /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker cp "$item" "$CONTAINER_ID_OCI_alpine_build:$JOB_DIR/"
-    fi
-  done
+  # Determine target directory
+  if [ "." = "." ] || [ "." = "./" ]; then
+    # Restore to root of job directory (default behavior)
+    /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker exec "$CONTAINER_ID_OCI_alpine_build" mkdir -p "$JOB_DIR"
+    
+    for item in "$NIXACTIONS_ARTIFACTS_DIR/myapp"/*; do
+      if [ -e "$item" ]; then
+        /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker cp "$item" "$CONTAINER_ID_OCI_alpine_build:$JOB_DIR/"
+      fi
+    done
+  else
+    # Restore to custom path
+    TARGET_DIR="$JOB_DIR/."
+    /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker exec "$CONTAINER_ID_OCI_alpine_build" mkdir -p "$TARGET_DIR"
+    
+    for item in "$NIXACTIONS_ARTIFACTS_DIR/myapp"/*; do
+      if [ -e "$item" ]; then
+        /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker cp "$item" "$CONTAINER_ID_OCI_alpine_build:$TARGET_DIR/"
+      fi
+    done
+  fi
 else
   _log_workflow artifact "myapp" event "✗" "Artifact not found"
   return 1
 fi
 
-_log_job "test" artifact "myapp" event "✓" "Restored"
+_log_job "test" artifact "myapp" path "." event "✓" "Restored"
 
 
   if [ -z "${CONTAINER_ID_OCI_alpine_build:-}" ]; then

@@ -19,7 +19,7 @@ WORKFLOW_CANCELLED=false
 trap 'WORKFLOW_CANCELLED=true; echo "⊘ Workflow cancelled"; exit 130' SIGINT SIGTERM
 
 job_build-docker-image() {
-      source /nix/store/f26psz5whxf06q1ba3yxvq874lpr2xal-nixactions-local-executor/bin/nixactions-local-executor
+      source /nix/store/gjwg64hal8wgjdz7mmhgdyq4c7qbqpfr-nixactions-local-executor/bin/nixactions-local-executor
 setup_local_workspace
   
       setup_local_job "build-docker-image"
@@ -39,7 +39,7 @@ fi
 }
 
 job_summary() {
-      source /nix/store/f26psz5whxf06q1ba3yxvq874lpr2xal-nixactions-local-executor/bin/nixactions-local-executor
+      source /nix/store/gjwg64hal8wgjdz7mmhgdyq4c7qbqpfr-nixactions-local-executor/bin/nixactions-local-executor
 setup_local_workspace
   
       setup_local_job "summary"
@@ -57,7 +57,7 @@ fi
 
 job_test-node() {
   # Mode: MOUNT - mount /nix/store from host
-source /nix/store/zykjlvbsxgafrj0j52rsiwg67piyh9hj-nixactions-oci-executor/bin/nixactions-oci-executor
+source /nix/store/wl2bxzccsz9d2bmnjmknqzmqgy01liar-nixactions-oci-executor/bin/nixactions-oci-executor
 export DOCKER=/nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker
 setup_oci_workspace "node:20-slim" "node_20_slim_mount"
 
@@ -101,7 +101,7 @@ fi
 
 job_test-python() {
   # Mode: MOUNT - mount /nix/store from host
-source /nix/store/zykjlvbsxgafrj0j52rsiwg67piyh9hj-nixactions-oci-executor/bin/nixactions-oci-executor
+source /nix/store/wl2bxzccsz9d2bmnjmknqzmqgy01liar-nixactions-oci-executor/bin/nixactions-oci-executor
 export DOCKER=/nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker
 setup_oci_workspace "python:3.11-slim" "python_3.11_slim_mount"
 
@@ -145,7 +145,7 @@ fi
 
 job_test-ubuntu() {
   # Mode: MOUNT - mount /nix/store from host
-source /nix/store/zykjlvbsxgafrj0j52rsiwg67piyh9hj-nixactions-oci-executor/bin/nixactions-oci-executor
+source /nix/store/wl2bxzccsz9d2bmnjmknqzmqgy01liar-nixactions-oci-executor/bin/nixactions-oci-executor
 export DOCKER=/nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker
 setup_oci_workspace "ubuntu:22.04" "ubuntu_22.04_mount"
 

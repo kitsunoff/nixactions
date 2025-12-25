@@ -19,7 +19,7 @@ WORKFLOW_CANCELLED=false
 trap 'WORKFLOW_CANCELLED=true; echo "⊘ Workflow cancelled"; exit 130' SIGINT SIGTERM
 
 job_build() {
-      source /nix/store/f26psz5whxf06q1ba3yxvq874lpr2xal-nixactions-local-executor/bin/nixactions-local-executor
+      source /nix/store/gjwg64hal8wgjdz7mmhgdyq4c7qbqpfr-nixactions-local-executor/bin/nixactions-local-executor
 setup_local_workspace
   
       setup_local_job "build"
@@ -48,17 +48,17 @@ echo "  ✓ Saved: release-binary → target/release/myapp (${ARTIFACT_SIZE})"
 }
 
 job_test() {
-      source /nix/store/f26psz5whxf06q1ba3yxvq874lpr2xal-nixactions-local-executor/bin/nixactions-local-executor
+      source /nix/store/gjwg64hal8wgjdz7mmhgdyq4c7qbqpfr-nixactions-local-executor/bin/nixactions-local-executor
 setup_local_workspace
   # Restore artifacts
 _log_job "test" artifacts "release-binary build-artifacts" event "→" "Restoring artifacts"
-restore_local_artifact "release-binary" "test"
+restore_local_artifact "release-binary" "." "test"
 
-_log_job "test" artifact "release-binary" event "✓" "Restored"
+_log_job "test" artifact "release-binary" path "." event "✓" "Restored"
 
-restore_local_artifact "build-artifacts" "test"
+restore_local_artifact "build-artifacts" "." "test"
 
-_log_job "test" artifact "build-artifacts" event "✓" "Restored"
+_log_job "test" artifact "build-artifacts" path "." event "✓" "Restored"
 
 
       setup_local_job "test"

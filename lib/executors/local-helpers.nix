@@ -84,17 +84,32 @@ pkgs.writeScriptBin "nixactions-local-executor" ''
   }
   
   # Restore artifact from HOST storage to job directory
-  # Usage: restore_local_artifact "artifact_name" "job_name"
+  # Usage: restore_local_artifact "artifact_name" "target_path" "job_name"
+  # Args:
+  #   - artifact_name: Name of the artifact to restore
+  #   - target_path: Where to restore in job dir (e.g., "." for root, "lib/" for subdir)
+  #   - job_name: Name of the job
   # Expects: $WORKSPACE_DIR_LOCAL, $NIXACTIONS_ARTIFACTS_DIR
   restore_local_artifact() {
     local name=$1
-    local job_name=$2
+    local target_path=$2
+    local job_name=$3
     
     JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/$job_name"
     if [ -e "$NIXACTIONS_ARTIFACTS_DIR/$name" ]; then
-      # Restore to job directory (will be created by executeJob)
       mkdir -p "$JOB_DIR"
-      cp -r "$NIXACTIONS_ARTIFACTS_DIR/$name"/* "$JOB_DIR/" 2>/dev/null || true
+      
+      # Determine target directory
+      if [ "$target_path" = "." ] || [ "$target_path" = "./" ]; then
+        # Restore to root of job directory (default behavior)
+        cp -r "$NIXACTIONS_ARTIFACTS_DIR/$name"/* "$JOB_DIR/" 2>/dev/null || true
+      else
+        # Restore to custom path
+        TARGET_DIR="$JOB_DIR/$target_path"
+        mkdir -p "$TARGET_DIR"
+        cp -r "$NIXACTIONS_ARTIFACTS_DIR/$name"/* "$TARGET_DIR/" 2>/dev/null || true
+      fi
+      
       return 0
     else
       _log_workflow artifact "$name" event "✗" "Artifact not found"

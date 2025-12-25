@@ -19,7 +19,7 @@ WORKFLOW_CANCELLED=false
 trap 'WORKFLOW_CANCELLED=true; echo "⊘ Workflow cancelled"; exit 130' SIGINT SIGTERM
 
 job_build-arch-amd64-distro-alpine() {
-      source /nix/store/f26psz5whxf06q1ba3yxvq874lpr2xal-nixactions-local-executor/bin/nixactions-local-executor
+      source /nix/store/gjwg64hal8wgjdz7mmhgdyq4c7qbqpfr-nixactions-local-executor/bin/nixactions-local-executor
 setup_local_workspace
   
       setup_local_job "build-arch-amd64-distro-alpine"
@@ -43,7 +43,7 @@ echo "  ✓ Saved: build-amd64-alpine → build-amd64-alpine/ (${ARTIFACT_SIZE})
 }
 
 job_build-arch-amd64-distro-debian() {
-      source /nix/store/f26psz5whxf06q1ba3yxvq874lpr2xal-nixactions-local-executor/bin/nixactions-local-executor
+      source /nix/store/gjwg64hal8wgjdz7mmhgdyq4c7qbqpfr-nixactions-local-executor/bin/nixactions-local-executor
 setup_local_workspace
   
       setup_local_job "build-arch-amd64-distro-debian"
@@ -67,7 +67,7 @@ echo "  ✓ Saved: build-amd64-debian → build-amd64-debian/ (${ARTIFACT_SIZE})
 }
 
 job_build-arch-arm64-distro-alpine() {
-      source /nix/store/f26psz5whxf06q1ba3yxvq874lpr2xal-nixactions-local-executor/bin/nixactions-local-executor
+      source /nix/store/gjwg64hal8wgjdz7mmhgdyq4c7qbqpfr-nixactions-local-executor/bin/nixactions-local-executor
 setup_local_workspace
   
       setup_local_job "build-arch-arm64-distro-alpine"
@@ -91,7 +91,7 @@ echo "  ✓ Saved: build-arm64-alpine → build-arm64-alpine/ (${ARTIFACT_SIZE})
 }
 
 job_build-arch-arm64-distro-debian() {
-      source /nix/store/f26psz5whxf06q1ba3yxvq874lpr2xal-nixactions-local-executor/bin/nixactions-local-executor
+      source /nix/store/gjwg64hal8wgjdz7mmhgdyq4c7qbqpfr-nixactions-local-executor/bin/nixactions-local-executor
 setup_local_workspace
   
       setup_local_job "build-arch-arm64-distro-debian"
@@ -115,25 +115,25 @@ echo "  ✓ Saved: build-arm64-debian → build-arm64-debian/ (${ARTIFACT_SIZE})
 }
 
 job_deploy() {
-      source /nix/store/f26psz5whxf06q1ba3yxvq874lpr2xal-nixactions-local-executor/bin/nixactions-local-executor
+      source /nix/store/gjwg64hal8wgjdz7mmhgdyq4c7qbqpfr-nixactions-local-executor/bin/nixactions-local-executor
 setup_local_workspace
   # Restore artifacts
 _log_job "deploy" artifacts "build-amd64-debian build-amd64-alpine build-arm64-debian build-arm64-alpine" event "→" "Restoring artifacts"
-restore_local_artifact "build-amd64-debian" "deploy"
+restore_local_artifact "build-amd64-debian" "." "deploy"
 
-_log_job "deploy" artifact "build-amd64-debian" event "✓" "Restored"
+_log_job "deploy" artifact "build-amd64-debian" path "." event "✓" "Restored"
 
-restore_local_artifact "build-amd64-alpine" "deploy"
+restore_local_artifact "build-amd64-alpine" "." "deploy"
 
-_log_job "deploy" artifact "build-amd64-alpine" event "✓" "Restored"
+_log_job "deploy" artifact "build-amd64-alpine" path "." event "✓" "Restored"
 
-restore_local_artifact "build-arm64-debian" "deploy"
+restore_local_artifact "build-arm64-debian" "." "deploy"
 
-_log_job "deploy" artifact "build-arm64-debian" event "✓" "Restored"
+_log_job "deploy" artifact "build-arm64-debian" path "." event "✓" "Restored"
 
-restore_local_artifact "build-arm64-alpine" "deploy"
+restore_local_artifact "build-arm64-alpine" "." "deploy"
 
-_log_job "deploy" artifact "build-arm64-alpine" event "✓" "Restored"
+_log_job "deploy" artifact "build-arm64-alpine" path "." event "✓" "Restored"
 
 
       setup_local_job "deploy"
@@ -150,7 +150,7 @@ fi
 }
 
 job_summary() {
-      source /nix/store/f26psz5whxf06q1ba3yxvq874lpr2xal-nixactions-local-executor/bin/nixactions-local-executor
+      source /nix/store/gjwg64hal8wgjdz7mmhgdyq4c7qbqpfr-nixactions-local-executor/bin/nixactions-local-executor
 setup_local_workspace
   
       setup_local_job "summary"
@@ -168,7 +168,7 @@ fi
 
 job_test-node-18-os-alpine() {
   # Mode: MOUNT - mount /nix/store from host
-source /nix/store/zykjlvbsxgafrj0j52rsiwg67piyh9hj-nixactions-oci-executor/bin/nixactions-oci-executor
+source /nix/store/wl2bxzccsz9d2bmnjmknqzmqgy01liar-nixactions-oci-executor/bin/nixactions-oci-executor
 export DOCKER=/nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker
 setup_oci_workspace "node:18-alpine" "node_18_alpine_mount"
 
@@ -209,7 +209,7 @@ fi
 
 job_test-node-18-os-ubuntu() {
   # Mode: MOUNT - mount /nix/store from host
-source /nix/store/zykjlvbsxgafrj0j52rsiwg67piyh9hj-nixactions-oci-executor/bin/nixactions-oci-executor
+source /nix/store/wl2bxzccsz9d2bmnjmknqzmqgy01liar-nixactions-oci-executor/bin/nixactions-oci-executor
 export DOCKER=/nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker
 setup_oci_workspace "node:18-ubuntu" "node_18_ubuntu_mount"
 
@@ -250,7 +250,7 @@ fi
 
 job_test-node-20-os-alpine() {
   # Mode: MOUNT - mount /nix/store from host
-source /nix/store/zykjlvbsxgafrj0j52rsiwg67piyh9hj-nixactions-oci-executor/bin/nixactions-oci-executor
+source /nix/store/wl2bxzccsz9d2bmnjmknqzmqgy01liar-nixactions-oci-executor/bin/nixactions-oci-executor
 export DOCKER=/nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker
 setup_oci_workspace "node:20-alpine" "node_20_alpine_mount"
 
@@ -291,7 +291,7 @@ fi
 
 job_test-node-20-os-ubuntu() {
   # Mode: MOUNT - mount /nix/store from host
-source /nix/store/zykjlvbsxgafrj0j52rsiwg67piyh9hj-nixactions-oci-executor/bin/nixactions-oci-executor
+source /nix/store/wl2bxzccsz9d2bmnjmknqzmqgy01liar-nixactions-oci-executor/bin/nixactions-oci-executor
 export DOCKER=/nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker
 setup_oci_workspace "node:20-ubuntu" "node_20_ubuntu_mount"
 
@@ -332,7 +332,7 @@ fi
 
 job_test-node-22-os-alpine() {
   # Mode: MOUNT - mount /nix/store from host
-source /nix/store/zykjlvbsxgafrj0j52rsiwg67piyh9hj-nixactions-oci-executor/bin/nixactions-oci-executor
+source /nix/store/wl2bxzccsz9d2bmnjmknqzmqgy01liar-nixactions-oci-executor/bin/nixactions-oci-executor
 export DOCKER=/nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker
 setup_oci_workspace "node:22-alpine" "node_22_alpine_mount"
 
@@ -373,7 +373,7 @@ fi
 
 job_test-node-22-os-ubuntu() {
   # Mode: MOUNT - mount /nix/store from host
-source /nix/store/zykjlvbsxgafrj0j52rsiwg67piyh9hj-nixactions-oci-executor/bin/nixactions-oci-executor
+source /nix/store/wl2bxzccsz9d2bmnjmknqzmqgy01liar-nixactions-oci-executor/bin/nixactions-oci-executor
 export DOCKER=/nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker
 setup_oci_workspace "node:22-ubuntu" "node_22_ubuntu_mount"
 

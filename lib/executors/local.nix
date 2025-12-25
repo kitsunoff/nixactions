@@ -49,7 +49,7 @@ fi'';
   '';
   
   # Restore artifact (executed on HOST before job starts)
-  restoreArtifact = { name, jobName }: ''
-    restore_local_artifact "${name}" "${jobName}"
+  restoreArtifact = { name, path ? ".", jobName }: ''
+    restore_local_artifact "${name}" "${path}" "${jobName}"
   '';
 }
