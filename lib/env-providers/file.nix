@@ -2,6 +2,7 @@
 
 { path
 , required ? false
+, secrets ? false  # Are values in this file secrets?
 }:
 
 pkgs.writeScriptBin "env-provider-file" ''

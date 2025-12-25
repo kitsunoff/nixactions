@@ -20,4 +20,7 @@ pkgs.writeScriptBin "env-provider-static" ''
       "printf 'export %s=%s\\n' ${lib.escapeShellArg key} ${lib.escapeShellArg (lib.escapeShellArg (toString value))}"
     ) env
   )}
-''
+'' // {
+  # Metadata: Static values are NOT secrets by default
+  passthru.allSecrets = false;
+}

@@ -82,4 +82,7 @@ pkgs.writeScriptBin "env-provider-sops" ''
       exit 1
       ;;
   esac
-''
+'' // {
+  # Metadata: All variables from SOPS are secrets
+  passthru.allSecrets = true;
+}
