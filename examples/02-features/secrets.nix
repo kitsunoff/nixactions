@@ -21,15 +21,17 @@ platform.mkWorkflow {
         DATABASE_PORT = "5432";
       };
       
-      actions = [
-        # Validate required environment variables
-        (platform.actions.requireEnv [ 
+      # Use env-providers to validate required variables
+      envProviders = [
+        (platform.envProviders.required [ 
           "APP_NAME" 
           "ENVIRONMENT"
           "DATABASE_HOST"
           "DATABASE_PORT"
         ])
-        
+      ];
+      
+      actions = [
         {
           name = "show-config";
           bash = ''
@@ -132,9 +134,9 @@ platform.mkWorkflow {
             echo ""
             
             # In real scenario, secrets would be loaded from:
-            # - SOPS: platform.actions.sopsLoad { file = ./secrets.sops.yaml; }
-            # - Vault: platform.actions.vaultLoad { path = "secret/data/app"; }
-            # - 1Password: platform.actions.opLoad { vault = "Production"; item = "API Keys"; }
+            # - SOPS: envProviders = [ (platform.envProviders.sops { file = ./secrets.sops.yaml; }) ];
+            # - File: envProviders = [ (platform.envProviders.file { path = ./.env.secrets; }) ];
+            # - Static: envProviders = [ (platform.envProviders.static { API_KEY = "xxx"; }) ];
             # - Runtime: API_KEY=xxx nix run .#deploy
             
             echo "In production, this would:"
@@ -167,17 +169,17 @@ platform.mkWorkflow {
           echo "  ✓ Workflow-level environment variables"
           echo "  ✓ Job-level environment variables"
           echo "  ✓ Action-level environment overrides"
-          echo "  ✓ Environment variable validation (requireEnv)"
+          echo "  ✓ Environment variable validation (envProviders.required)"
           echo "  ✓ Runtime environment override support"
           echo ""
           echo "To test runtime override:"
           echo "  $ API_KEY=secret123 DB_PASSWORD=pass456 nix run .#example-secrets"
           echo ""
-          echo "For production secrets, use:"
-          echo "  • SOPS (recommended): platform.actions.sopsLoad"
-          echo "  • HashiCorp Vault: platform.actions.vaultLoad"
-          echo "  • 1Password: platform.actions.opLoad"
-          echo "  • Age encryption: platform.actions.ageDecrypt"
+          echo "For production secrets, use envProviders:"
+          echo "  • SOPS (encrypted files): platform.envProviders.sops"
+          echo "  • File (.env files): platform.envProviders.file"
+          echo "  • Static (hardcoded): platform.envProviders.static"
+          echo "  • Required (validation): platform.envProviders.required"
           echo ""
         '';
       }];

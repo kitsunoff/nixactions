@@ -193,49 +193,62 @@ in {
 
 ---
 
-### Contract 2: Executor
+### Contract 2: Executor (5-Hook Model)
 
-**Definition:** Abstraction of "where to execute" + build-time provisioning
+**Definition:** Abstraction of "where to execute" with workspace-level and job-level lifecycle hooks
 
 **Type Signature:**
 ```nix
 Executor :: {
-  name :: String,
+  name     :: String,  # Unique identifier (can be customized)
+  copyRepo :: Bool,    # Whether to copy repository to job directory (default: true)
   
-  # Setup workspace for job (called in each job function)
-  # Receives action derivations for this job
-  # Initializes execution environment with lazy init (creates once, reuses)
-  # Use for: creating containers, VMs, copying derivations, etc.
-  # Expects: $WORKFLOW_ID to be set
-  # Pattern: Check if already initialized, create if not
-  #   if [ -z "${EXECUTOR_STATE_VAR:-}" ]; then
-  #     # Create container/VM/connection
-  #     # Optionally provision actionDerivations
-  #     export EXECUTOR_STATE_VAR=...
-  #   fi
+  # === WORKSPACE LEVEL (for entire workflow) ===
+  
+  # Setup workspace (called ONCE at workflow start for each unique executor)
+  # Receives ALL action derivations from ALL jobs using this executor (by name)
+  # Should be idempotent (may be called multiple times if same executor used multiple times)
+  # Note: Expects $WORKFLOW_ID to be set in environment
   setupWorkspace :: {
-    actionDerivations :: [Derivation]  # Actions for this job
+    actionDerivations :: [Derivation]  # ALL actions from ALL jobs sharing this executor
   } -> Bash,
   
-  # Cleanup workspace (called at workflow end)
-  cleanupWorkspace :: Bash,
+  # Cleanup workspace (called ONCE at workflow end via trap EXIT)
+  # Receives ALL action derivations from ALL jobs using this executor (by name)
+  # Should cleanup all workspace-level resources
+  cleanupWorkspace :: {
+    actionDerivations :: [Derivation]  # ALL actions from ALL jobs sharing this executor
+  } -> Bash,
   
-  # Execute job in isolated directory
-  # Executor receives action derivations and composes them for execution
-  # Expects: $WORKFLOW_ID to be set
+  # === JOB LEVEL (for each job) ===
+  
+  # Setup job environment (called BEFORE executeJob for each job)
+  # Receives action derivations for this specific job
+  # Should create job-specific resources (directories, containers, pods, etc.)
+  setupJob :: {
+    jobName           :: String,
+    actionDerivations :: [Derivation],  # Actions for THIS job only
+  } -> Bash,
+  
+  # Execute a job within the workspace
+  # Receives action derivations and composes them for execution
   executeJob :: {
     jobName           :: String,
     actionDerivations :: [Derivation],  # Actions to execute
     env               :: AttrSet,        # Job-level environment
   } -> Bash,
   
+  # Cleanup job resources (called AFTER executeJob for each job)
+  # Should cleanup job-specific resources (containers, pods, etc.)
+  # Workspace-level resources should NOT be cleaned here (use cleanupWorkspace)
+  cleanupJob :: {
+    jobName :: String,
+  } -> Bash,
+  
+  # === ARTIFACTS ===
+  
   # Save artifact from job directory to HOST artifacts storage
   # Called AFTER executeJob completes (executed on HOST)
-  # Expects: $NIXACTIONS_ARTIFACTS_DIR (exists ONLY on HOST)
-  # Implementation: Transfer files from execution environment to host
-  #   - local: cp from job dir to $NIXACTIONS_ARTIFACTS_DIR
-  #   - OCI: docker cp from container to $NIXACTIONS_ARTIFACTS_DIR
-  #   - SSH: scp from remote to $NIXACTIONS_ARTIFACTS_DIR
   saveArtifact :: {
     name    :: String,  # Artifact name
     path    :: String,  # Relative path in job directory
@@ -244,11 +257,6 @@ Executor :: {
   
   # Restore artifact from HOST storage to job directory
   # Called BEFORE executeJob starts (executed on HOST)
-  # Expects: $NIXACTIONS_ARTIFACTS_DIR (exists ONLY on HOST)
-  # Implementation: Transfer files from host to execution environment
-  #   - local: cp from $NIXACTIONS_ARTIFACTS_DIR to job dir
-  #   - OCI: docker cp from $NIXACTIONS_ARTIFACTS_DIR to container
-  #   - SSH: scp from $NIXACTIONS_ARTIFACTS_DIR to remote
   restoreArtifact :: {
     name    :: String,  # Artifact name
     path    :: String,  # Target path (relative to job dir, default ".")
@@ -258,58 +266,136 @@ Executor :: {
 ```
 
 **Key design:**
-- ✅ `setupWorkspace` called in each job function with **lazy init pattern**
-  - Receives `actionDerivations` for that specific job
-  - Creates environment on first call, subsequent calls skip creation
-  - Multiple jobs using same executor → environment reused via lazy init
-- ✅ `executeJob` receives `actionDerivations` and `env`
-  - Composes actions into execution script
-  - Sets up job directory and environment
-  - Runs actions in execution context (docker exec, local, ssh, etc.)
-- ✅ `saveArtifact`/`restoreArtifact` are SEPARATE functions
-  - Called outside executeJob on HOST
-  - Transfer files between execution environment and `$NIXACTIONS_ARTIFACTS_DIR`
+- ✅ **Workspace-level hooks** (`setupWorkspace`, `cleanupWorkspace`)
+  - Called **ONCE** per unique executor (by name)
+  - Receive **ALL** actionDerivations from **ALL** jobs sharing this executor
+  - Multiple jobs with same executor → one workspace, shared resources
+- ✅ **Job-level hooks** (`setupJob`, `executeJob`, `cleanupJob`)
+  - Called **per job**
+  - Each job gets isolated resources (directory, container, pod)
+  - Cleanup happens immediately after job completes
+- ✅ **Executor uniqueness by name**
+  - Executors deduplicated by `name` field
+  - Custom names allow multiple workspaces with same image
+  - Example: `oci { image = "nixos/nix"; name = "build-env"; }` creates separate workspace from default
+
+**Execution Flow:**
+
+```bash
+# Workflow start
+main() {
+  # 1. Setup workspaces (ONCE per unique executor)
+  local.setupWorkspace({ actionDerivations = [all actions from jobs using "local"] })
+  oci.setupWorkspace({ actionDerivations = [all actions from jobs using "oci-nixos_nix"] })
+  
+  # 2. Run jobs
+  job_build() {
+    oci.setupJob({ jobName = "build", actionDerivations = [build actions] })
+    restore_artifacts
+    oci.executeJob({ jobName = "build", actionDerivations, env })
+    save_artifacts
+    oci.cleanupJob({ jobName = "build" })
+  }
+  
+  job_test() {
+    oci.setupJob({ jobName = "test", actionDerivations = [test actions] })
+    restore_artifacts
+    oci.executeJob({ jobName = "test", actionDerivations, env })
+    save_artifacts
+    oci.cleanupJob({ jobName = "test" })
+  }
+}
+
+# Workflow end (via trap)
+cleanup_all() {
+  oci.cleanupWorkspace({ actionDerivations = [all OCI actions] })
+  local.cleanupWorkspace({ actionDerivations = [all local actions] })
+}
+```
+
+**Shared Executor Concept:**
+
+When multiple jobs use the same executor (by name), they share ONE workspace:
+
+```nix
+jobs = {
+  build = { 
+    executor = oci { image = "nixos/nix"; };  # name = "oci-nixos_nix"
+    actions = [ <build-action> ];
+  };
+  test = { 
+    executor = oci { image = "nixos/nix"; };  # name = "oci-nixos_nix" (SAME!)
+    actions = [ <test-action> ];
+  };
+  deploy = { 
+    executor = oci { image = "nixos/nix"; };  # name = "oci-nixos_nix" (SAME!)
+    actions = [ <deploy-action> ];
+  };
+}
+
+# Result:
+# - 1 call to setupWorkspace with actionDerivations = [build, test, deploy]
+# - 3 calls to setupJob/executeJob/cleanupJob (one per job)
+# - 1 call to cleanupWorkspace
+# - Workspace structure:
+#   /tmp/nixactions/$WORKFLOW_ID/oci-nixos_nix/
+#     ├─ jobs/
+#     │  ├─ build/   ← Job 1 (separate container)
+#     │  ├─ test/    ← Job 2 (separate container)
+#     │  └─ deploy/  ← Job 3 (separate container)
+```
+
+**Custom Executor Names (Isolated Workspaces):**
+
+Custom names allow creating separate workspaces even with same image:
+
+```nix
+jobs = {
+  build = { 
+    executor = oci { image = "nixos/nix"; name = "build-env"; };
+    actions = [ <build-action> ];
+  };
+  test = { 
+    executor = oci { image = "nixos/nix"; name = "test-env"; };
+    actions = [ <test-action> ];
+  };
+}
+
+# Result:
+# - 2 executors: "build-env" and "test-env"
+# - 2 calls to setupWorkspace (one per executor)
+# - 2 separate workspaces:
+#   /tmp/nixactions/$WORKFLOW_ID/build-env/
+#   /tmp/nixactions/$WORKFLOW_ID/test-env/
+```
 
 **Responsibilities:**
 
-1. **Workspace Initialization**
-   - `setupWorkspace`: Initialize execution environment for job (lazy init)
-   - Called in each job function, but creates environment only once
-   - Use cases:
-     - **Local**: Create /tmp workspace directory
-     - **OCI**: Create and start Docker container with /nix/store mount
-     - **VM**: Start VM instance
-     - **SSH**: Establish SSH connection
-   - Uses lazy init pattern: check if initialized, create if not
-   - `cleanupWorkspace`: Remove workspace at workflow end
+1. **Workspace Management** (Lifecycle: workflow start → end)
+   - `setupWorkspace`: Create shared workspace for all jobs using this executor
+     - Called ONCE per unique executor name
+     - Receives ALL actionDerivations from ALL jobs
+     - Use for: creating base directories, pre-warming caches, resource allocation
+   - `cleanupWorkspace`: Remove workspace and all resources
+     - Called ONCE at workflow end via trap
+     - Receives ALL actionDerivations for potential cleanup optimization
 
-2. **Job Execution**
-   - `executeJob`: Compose and execute actions in isolated directory
-   - Receives action derivations and job environment
-   - Creates job directory: `$WORKSPACE_DIR/jobs/${jobName}`
-   - Sets up environment variables
-   - Executes each action derivation
-   - Executor handles execution context (e.g., `docker exec` for OCI, direct for local)
+2. **Job Isolation** (Lifecycle: per job)
+   - `setupJob`: Create job-specific resources
+     - Called BEFORE each job
+     - Use for: creating job directory, starting container/pod, copying repo
+   - `executeJob`: Run actions in isolated environment
+     - Composes and executes action derivations
+     - Sets up job directory and environment
+   - `cleanupJob`: Remove job-specific resources
+     - Called AFTER each job completes
+     - Use for: stopping containers, removing pods, cleaning job directory
 
 3. **Artifacts Management** (Local Storage)
-   - `saveArtifact`: Save artifact from job directory to **HOST** artifacts storage
-   - `restoreArtifact`: Restore artifact from **HOST** storage to job directory
-   - Called by workflow orchestrator (NOT inside executeJob)
+   - `saveArtifact`: Save artifact from job directory to HOST
+   - `restoreArtifact`: Restore artifact from HOST to job directory
    - Always executed on HOST machine
-   - Uses `$NIXACTIONS_ARTIFACTS_DIR` (exists ONLY on HOST)
-   
-   **Implementation varies by executor:**
-   - **Local**: Direct file copy (workspace is on host)
-     - Save: `cp $WORKSPACE_DIR/jobs/$JOB/$PATH $NIXACTIONS_ARTIFACTS_DIR/$NAME/`
-     - Restore: `cp $NIXACTIONS_ARTIFACTS_DIR/$NAME/* $WORKSPACE_DIR/jobs/$JOB/`
-   
-   - **OCI**: Docker cp between container and host
-     - Save: `docker cp $CONTAINER:$JOB_DIR/$PATH $NIXACTIONS_ARTIFACTS_DIR/$NAME/`
-     - Restore: `docker cp $NIXACTIONS_ARTIFACTS_DIR/$NAME/* $CONTAINER:$JOB_DIR/`
-   
-   - **SSH** (future): SCP from remote to host artifacts dir
-     - Save: `scp $REMOTE:$JOB_DIR/$PATH $NIXACTIONS_ARTIFACTS_DIR/$NAME/`
-     - Restore: `scp $NIXACTIONS_ARTIFACTS_DIR/$NAME/* $REMOTE:$JOB_DIR/`
+   - Uses `$NIXACTIONS_ARTIFACTS_DIR`
 
 ---
 
@@ -3446,6 +3532,241 @@ platform.mkWorkflow {
 | **Reproducibility** | ❌ Variable | ✅ Guaranteed (Nix) |
 | **Type safety** | ❌ YAML | ✅ Nix |
 | **Cost** | $21/month | ✅ $0 |
+
+---
+
+## Executor Deduplication & Action Aggregation
+
+### Problem Statement
+
+When multiple jobs use executors with the same configuration (e.g., same Docker image), we want to:
+1. **Share workspace** - create ONE workspace instead of N workspaces
+2. **Optimize setup** - call setupWorkspace ONCE instead of N times
+3. **Aggregate actions** - pass ALL actions to setupWorkspace for optimization opportunities
+4. **Maintain isolation** - each job still gets its own directory/container/resources
+
+### Solution: Deduplication by Executor Name
+
+Executors are deduplicated by their `name` field (not by reference):
+
+```nix
+# In mk-workflow.nix (lines 151-185)
+
+# Collect unique executors by NAME (not by reference!)
+allExecutors = 
+  let
+    executorsByName = lib.foldl' (acc: job:
+      if acc ? ${job.executor.name}
+      then acc  # Already have this executor - skip
+      else acc // { ${job.executor.name} = job.executor; }  # Add new executor
+    ) {} (lib.attrValues nonEmptyJobs);
+  in
+    lib.attrValues executorsByName;
+
+# For each unique executor, collect ALL actionDerivations from ALL jobs using it
+executorActionDerivations = lib.listToAttrs (
+  map (executor:
+    let
+      # Find ALL jobs using THIS executor (by name)
+      jobsUsingExecutor = lib.filterAttrs (jobName: job: 
+        job.executor.name == executor.name
+      ) nonEmptyJobs;
+      
+      # Collect ALL action derivations from those jobs
+      execActionDerivs = lib.unique (lib.flatten (
+        lib.mapAttrsToList (jobName: job:
+          map (toActionDerivation jobRetry jobTimeout) job.actions
+        ) jobsUsingExecutor
+      ));
+    in {
+      name = executor.name;
+      value = execActionDerivs;
+    }
+  ) allExecutors
+);
+```
+
+### Test Case 1: Shared Executor
+
+**Configuration:**
+```nix
+# examples/02-features/test-shared-executor.nix
+jobs = {
+  build = {
+    executor = oci { image = "nixos/nix"; };  # name = "oci-nixos_nix"
+    actions = [ <build-action> ];
+  };
+  test = {
+    executor = oci { image = "nixos/nix"; };  # name = "oci-nixos_nix" (SAME!)
+    actions = [ <test-action> ];
+  };
+  deploy = {
+    executor = oci { image = "nixos/nix"; };  # name = "oci-nixos_nix" (SAME!)
+    actions = [ <deploy-action> ];
+  };
+}
+```
+
+**Generated Code:**
+```bash
+# setupWorkspace called ONCE with ALL 3 actions
+_log_workflow executor "oci-nixos_nix" action_count "3" event "→" "Workspace created (3 actions)"
+
+# Workspace structure (1 workspace, 3 jobs)
+/tmp/nixactions/$WORKFLOW_ID/oci-nixos_nix/
+  └─ jobs/
+     ├─ build/   ← Job 1 (separate container: JOB_CONTAINER_oci_nixos_nix_build)
+     ├─ test/    ← Job 2 (separate container: JOB_CONTAINER_oci_nixos_nix_test)
+     └─ deploy/  ← Job 3 (separate container: JOB_CONTAINER_oci_nixos_nix_deploy)
+
+# cleanupWorkspace called ONCE
+rm -rf "$WORKSPACE_DIR_oci_nixos_nix"
+```
+
+**Result:**
+- ✅ 1 executor ("oci-nixos_nix")
+- ✅ 1 workspace
+- ✅ setupWorkspace receives **3 actions** (from ALL jobs)
+- ✅ cleanupWorkspace receives **3 actions** (from ALL jobs)
+- ✅ Each job isolated (own directory + container)
+
+### Test Case 2: Custom Executor Names (Isolated Workspaces)
+
+**Configuration:**
+```nix
+# examples/02-features/test-custom-executor-names.nix
+jobs = {
+  build = {
+    executor = oci { image = "nixos/nix"; name = "build-env"; };
+    actions = [ <build-action> ];
+  };
+  test = {
+    executor = oci { image = "nixos/nix"; name = "test-env"; };
+    actions = [ <test-action> ];
+  };
+  deploy = {
+    executor = oci { image = "nixos/nix"; };  # name = "oci-nixos_nix" (default)
+    actions = [ <deploy-action> ];
+  };
+}
+```
+
+**Generated Code:**
+```bash
+# setupWorkspace called 3 TIMES (one per unique name)
+_log_workflow executor "build-env"      action_count "1" event "→" "Workspace created (1 actions)"
+_log_workflow executor "test-env"       action_count "1" event "→" "Workspace created (1 actions)"
+_log_workflow executor "oci-nixos_nix"  action_count "1" event "→" "Workspace created (1 actions)"
+
+# Workspace structure (3 workspaces, 3 jobs)
+/tmp/nixactions/$WORKFLOW_ID/
+  ├─ build-env/
+  │  └─ jobs/build/
+  ├─ test-env/
+  │  └─ jobs/test/
+  └─ oci-nixos_nix/
+     └─ jobs/deploy/
+```
+
+**Result:**
+- ✅ 3 executors (different names)
+- ✅ 3 workspaces
+- ✅ Each setupWorkspace receives **1 action** (only from its job)
+- ✅ Complete isolation between jobs
+
+### Why This Matters
+
+**actionDerivations aggregation enables:**
+
+1. **Dependency pre-loading** - executor knows ALL dependencies needed
+   ```nix
+   setupWorkspace = { actionDerivations }: ''
+     # Pre-load all dependencies into cache
+     ${lib.concatMapStringsSep "\n" (action: ''
+       for dep in ${lib.concatStringsSep " " (action.passthru.deps or [])}; do
+         echo "Pre-loading: $dep"
+       done
+     '') actionDerivations}
+   '';
+   ```
+
+2. **Shared resource allocation** - create shared caches, volumes, networks
+   ```nix
+   setupWorkspace = { actionDerivations }: ''
+     # Create shared volume for all jobs
+     docker volume create workspace-cache
+     
+     # Count total jobs for resource planning
+     TOTAL_JOBS=${toString (builtins.length actionDerivations)}
+     echo "Allocating resources for $TOTAL_JOBS jobs"
+   '';
+   ```
+
+3. **Custom image building** - bake all actions into one image
+   ```nix
+   setupWorkspace = { actionDerivations }: ''
+     # Build custom image with all actions pre-installed
+     docker build -t workflow-image \
+       --build-arg ACTIONS="${toString actionDerivations}" \
+       -f- . <<EOF
+       FROM nixos/nix
+       ${lib.concatMapStringsSep "\n" (action: 
+         "COPY ${action} /actions/"
+       ) actionDerivations}
+     EOF
+   '';
+   ```
+
+### Custom Names Use Cases
+
+**When to use custom names:**
+
+1. **Different resource pools** - separate build/test environments
+   ```nix
+   build = { executor = oci { image = "nixos/nix"; name = "build-pool"; }; };
+   test  = { executor = oci { image = "nixos/nix"; name = "test-pool"; }; };
+   ```
+
+2. **Different configurations** - same image, different settings
+   ```nix
+   gpu-job = { 
+     executor = oci { 
+       image = "nvidia/cuda"; 
+       name = "gpu-env";  # Will use nvidia runtime
+     }; 
+   };
+   cpu-job = { 
+     executor = oci { 
+       image = "nvidia/cuda"; 
+       name = "cpu-env";  # Regular runtime
+     }; 
+   };
+   ```
+
+3. **Explicit isolation** - force separate workspaces even with same image
+   ```nix
+   job1 = { executor = local { name = "isolated-1"; }; };
+   job2 = { executor = local { name = "isolated-2"; }; };
+   ```
+
+**When to share (default):**
+
+1. **Same environment** - all jobs can share workspace
+2. **Resource efficiency** - reuse containers/VMs/connections
+3. **Fast setup** - setupWorkspace called once
+
+### Proof of Concept
+
+Tests proving the concept:
+- `examples/02-features/test-shared-executor.nix` - 3 jobs, 1 executor, 3 actions aggregated
+- `examples/02-features/test-custom-executor-names.nix` - 3 jobs, 3 executors, 1 action each
+
+Build with action count logging enabled:
+```bash
+nix-build -E 'let pkgs = import <nixpkgs> {}; platform = import ./lib { inherit pkgs; }; in import ./examples/02-features/test-shared-executor.nix { inherit pkgs platform; }'
+cat result/bin/test-shared-executor | grep "Workspace created"
+# Output: Workspace created (3 actions)  ← PROOF!
+```
 
 ---
 

@@ -2,8 +2,6 @@
 
 This document defines the coding standards and patterns for creating reusable job templates in NixActions.
 
-> **📘 See also:** [INPUTS_OUTPUTS_DESIGN.md](./INPUTS_OUTPUTS_DESIGN.md) for comprehensive guide on designing inputs, outputs, and job dependencies.
-
 ## Table of Contents
 
 1. [Philosophy](#philosophy)
@@ -15,7 +13,8 @@ This document defines the coding standards and patterns for creating reusable jo
 7. [Documentation](#documentation)
 8. [Examples](#examples)
 9. [Testing](#testing)
-10. [Inputs/Outputs/Needs](#inputsoutputsneeds)
+10. [Configurable Inputs/Outputs](#configurable-inputsoutputs)
+11. [Configurable Environment Variables](#configurable-environment-variables)
 
 ---
 
@@ -65,8 +64,8 @@ A function that returns a complete job configuration:
 { pkgs, lib, actions }:
 
 {
+  executor,  # Required
   name ? "my-job",
-  executor ? null,  # Let user specify
 }:
 
 {
@@ -91,8 +90,8 @@ A function with extensive parameters for customization:
 { pkgs, lib, actions }:
 
 {
+  executor,  # Required
   name ? "node-ci",
-  executor ? null,
   nodeVersion ? "18",
   runTests ? true,
   runLint ? true,
@@ -126,23 +125,34 @@ A function that returns multiple related jobs:
 ```nix
 { pkgs, lib, actions }:
 
-{ registry, images, ... }:
-
 {
-  build = {
-    executor = ...;
+  executor,  # Required - used for all jobs
+  jobPrefix ? "",  # Optional prefix to avoid job name conflicts
+  registry,
+  images,
+}:
+
+let
+  # Internal job names - scoped to this template
+  buildJob = "${jobPrefix}build";
+  testJob = "${jobPrefix}test";
+  deployJob = "${jobPrefix}deploy";
+in
+{
+  ${buildJob} = {
+    inherit executor;
     actions = [ ... ];
   };
   
-  test = {
-    executor = ...;
-    needs = [ "build" ];
+  ${testJob} = {
+    inherit executor;
+    needs = [ buildJob ];  # Reference internal job name
     actions = [ ... ];
   };
   
-  deploy = {
-    executor = ...;
-    needs = [ "test" ];
+  ${deployJob} = {
+    inherit executor;
+    needs = [ testJob ];  # Reference internal job name
     actions = [ ... ];
   };
 }
@@ -152,6 +162,8 @@ A function that returns multiple related jobs:
 - Complete CI/CD pipeline
 - Multiple stages with dependencies
 - End-to-end workflow
+
+**Important:** Multi-job templates MUST use scoped job names (via `jobPrefix`) to avoid conflicts with other jobs in the workflow. Internal `needs` should reference these scoped names.
 
 ---
 
@@ -163,9 +175,13 @@ A function that returns multiple related jobs:
 # lib/jobs/hello-world.nix
 { pkgs, lib, actions }:
 
+{
+  executor,  # User MUST provide executor
+}:
+
 # Returns a job configuration
 {
-  executor = null;  # User must specify
+  inherit executor;
   actions = [
     (actions.runCommand ''
       echo "Hello, World!"
@@ -176,7 +192,7 @@ A function that returns multiple related jobs:
 
 **Usage:**
 ```nix
-jobs.hello = jobs.helloWorld // {
+jobs.hello = jobs.helloWorld {
   executor = executors.local;
 };
 ```
@@ -188,6 +204,7 @@ jobs.hello = jobs.helloWorld // {
 { pkgs, lib, actions }:
 
 {
+  executor,  # Required
   nodeVersion ? "18",
   packageManager ? "npm",  # or "yarn", "pnpm"
   runTests ? true,
@@ -199,7 +216,7 @@ jobs.hello = jobs.helloWorld // {
 }:
 
 {
-  executor = null;
+  inherit executor;
   
   actions = [
     actions.checkout
@@ -222,12 +239,11 @@ jobs.hello = jobs.helloWorld // {
 
 **Usage:**
 ```nix
-jobs.ci = (jobs.nodeCI {
+jobs.ci = jobs.nodeCI {
+  executor = executors.local;
   nodeVersion = "20";
   packageManager = "pnpm";
   runLint = false;
-}) // {
-  executor = executors.local;
 };
 ```
 
@@ -238,16 +254,24 @@ jobs.ci = (jobs.nodeCI {
 { pkgs, lib, actions }:
 
 {
+  executor,  # Required - will be used for all jobs
+  jobPrefix ? "",  # Prefix to avoid job name conflicts
   registry,
   images,
   runTests ? true,
   pushToRegistry ? false,
 }:
 
+let
+  # Scoped job names
+  buildJob = "${jobPrefix}build";
+  testJob = "${jobPrefix}test";
+  pushJob = "${jobPrefix}push";
+in
 {
   # Build stage
-  build = {
-    executor = null;
+  ${buildJob} = {
+    inherit executor;
     actions = [
       actions.checkout
     ] ++ (actions.buildImages {
@@ -257,18 +281,18 @@ jobs.ci = (jobs.nodeCI {
   };
   
   # Test stage
-  test = lib.optionalAttrs runTests {
-    executor = null;
-    needs = [ "build" ];
+  ${testJob} = lib.optionalAttrs runTests {
+    inherit executor;
+    needs = [ buildJob ];  # Reference scoped name
     actions = [
       (actions.runCommand "docker run --rm ${registry}/${(builtins.head images).name} npm test")
     ];
   };
   
   # Push stage
-  push = lib.optionalAttrs pushToRegistry {
-    executor = null;
-    needs = if runTests then [ "test" ] else [ "build" ];
+  ${pushJob} = lib.optionalAttrs pushToRegistry {
+    inherit executor;
+    needs = if runTests then [ testJob ] else [ buildJob ];  # Reference scoped names
     actions = map (image: 
       (actions.runCommand "docker push ${registry}/${image.name}")
     ) images;
@@ -278,15 +302,12 @@ jobs.ci = (jobs.nodeCI {
 
 **Usage:**
 ```nix
-jobs = (jobs.dockerPipeline {
+jobs = jobs.dockerPipeline {
+  executor = executors.local;
+  jobPrefix = "docker-";  # Creates: docker-build, docker-test, docker-push
   registry = "myregistry.io";
   images = [ { name = "myapp"; } ];
   pushToRegistry = true;
-}) // {
-  # Override executor for all jobs
-  build.executor = executors.local;
-  test.executor = executors.local;
-  push.executor = executors.local;
 };
 ```
 
@@ -300,6 +321,7 @@ Returns a function that creates jobs:
 
 # Returns a FUNCTION that generates jobs
 { 
+  executor,  # Required
   name,
   matrix,  # { node = ["18" "20"]; os = ["ubuntu" "macos"]; }
   actions,
@@ -311,7 +333,7 @@ lib.listToAttrs (
       ({ node, os }: {
         name = "${name}-node${node}-${os}";
         value = {
-          executor = null;
+          inherit executor;
           env = {
             NODE_VERSION = node;
             OS = os;
@@ -327,6 +349,7 @@ lib.listToAttrs (
 **Usage:**
 ```nix
 jobs = jobs.matrixCI {
+  executor = executors.local;
   name = "test";
   matrix = {
     node = [ "18" "20" "22" ];
@@ -340,6 +363,141 @@ jobs = jobs.matrixCI {
 };
 # Generates: test-node18-ubuntu, test-node18-macos, test-node20-ubuntu, ...
 ```
+
+---
+
+## Multi-Job Dependencies
+
+**CRITICAL:** When creating templates that return multiple jobs, you MUST scope job names to avoid conflicts.
+
+### Problem: Name Collisions
+
+```nix
+# BAD - Hardcoded job names will conflict
+{ executor }:
+
+{
+  build = { 
+    inherit executor;
+    actions = [ /* ... */ ];
+  };
+  
+  test = {
+    inherit executor;
+    needs = [ "build" ];  # Which "build"? Could conflict!
+    actions = [ /* ... */ ];
+  };
+}
+
+# Usage causes conflicts:
+jobs = jobs.dockerPipeline { executor = executors.local; }
+  // jobs.nodePipeline { executor = executors.local; };
+# Error: Both define "build" and "test"!
+```
+
+### ✅ Solution: Job Prefix Parameter
+
+```nix
+# GOOD - Scoped job names
+{ 
+  executor,
+  jobPrefix ? "",  # Allow user to scope job names
+}:
+
+let
+  # Internal scoped names
+  buildJob = "${jobPrefix}build";
+  testJob = "${jobPrefix}test";
+  deployJob = "${jobPrefix}deploy";
+in
+{
+  ${buildJob} = {
+    inherit executor;
+    actions = [ /* ... */ ];
+  };
+  
+  ${testJob} = {
+    inherit executor;
+    needs = [ buildJob ];  # Reference scoped name
+    actions = [ /* ... */ ];
+  };
+  
+  ${deployJob} = {
+    inherit executor;
+    needs = [ testJob ];  # Reference scoped name
+    actions = [ /* ... */ ];
+  };
+}
+```
+
+**Usage:**
+```nix
+jobs = jobs.dockerPipeline { 
+  executor = executors.local;
+  jobPrefix = "docker-";  # Creates: docker-build, docker-test, docker-deploy
+} // jobs.nodePipeline {
+  executor = executors.local;
+  jobPrefix = "node-";  # Creates: node-build, node-test, node-deploy
+};
+# No conflicts!
+```
+
+### Pattern: Overridable Needs
+
+Allow users to override internal dependencies:
+
+```nix
+{
+  executor,
+  jobPrefix ? "",
+  
+  # Allow overriding internal dependencies
+  buildJobDeps ? [],  # Additional deps for build
+  testJobDeps ? [],   # Additional deps for test
+}:
+
+let
+  buildJob = "${jobPrefix}build";
+  testJob = "${jobPrefix}test";
+in
+{
+  ${buildJob} = {
+    inherit executor;
+    needs = buildJobDeps;  # User can add external dependencies
+    actions = [ /* ... */ ];
+  };
+  
+  ${testJob} = {
+    inherit executor;
+    needs = [ buildJob ] ++ testJobDeps;  # Internal + external deps
+    actions = [ /* ... */ ];
+  };
+}
+```
+
+**Usage with external dependencies:**
+```nix
+jobs = {
+  # External job
+  setupInfra = {
+    executor = executors.local;
+    actions = [ /* setup */ ];
+  };
+  
+  # Pipeline that depends on external job
+} // jobs.dockerPipeline {
+  executor = executors.local;
+  jobPrefix = "docker-";
+  buildJobDeps = [ "setupInfra" ];  # docker-build now depends on setupInfra
+};
+```
+
+### Requirements for Multi-Job Templates
+
+1. **MUST** use `jobPrefix` parameter (default: `""`)
+2. **MUST** scope all internal job names with prefix
+3. **MUST** use scoped names in internal `needs` references
+4. **MAY** allow users to add external dependencies via override parameters
 
 ---
 
@@ -385,13 +543,14 @@ When exporting from `default.nix`:
 
 # Parameters
 {
+  executor,  # Required
   param1,
   param2 ? "default",
 }:
 
 # Returns job configuration
 {
-  executor = null;
+  inherit executor;
   actions = [
     actions.checkout
     (actions.runCommand "echo ${param1}")
@@ -409,6 +568,7 @@ When exporting from `default.nix`:
 # Description of what this job does.
 #
 # Parameters:
+#   - executor (required): Executor to run the job
 #   - param1 (required): Description
 #   - param2 (optional): Description [default: value]
 #
@@ -416,14 +576,14 @@ When exporting from `default.nix`:
 #   Single job configuration OR attribute set of multiple jobs
 #
 # Usage:
-#   jobs.myJob = (jobs.templateName { 
+#   jobs.myJob = jobs.templateName { 
+#     executor = executors.local;
 #     param1 = "value"; 
-#   }) // { 
-#     executor = executors.local; 
 #   };
 
 {
   # Required parameters
+  executor,
   param1,
   
   # Optional parameters with defaults
@@ -444,16 +604,12 @@ in
 
 # Return job configuration
 {
-  # Executor (null = user must specify)
-  executor = null;
+  inherit executor;
   
   # Optional: job-level environment
   env = {
     PARAM1 = param1;
   };
-  
-  # Optional: job-level settings
-  continueOnError = false;
   
   # Actions list
   actions = [
@@ -544,19 +700,22 @@ in
 # A basic Node.js CI job that runs install, lint, test, and build.
 #
 # Parameters:
+#   - executor (required): Executor to run the job
 #   - nodeVersion (optional): Node.js version [default: "18"]
 #
 # Usage:
-#   jobs.ci = (jobs.nodeCI { nodeVersion = "20"; }) // {
+#   jobs.ci = jobs.nodeCI {
 #     executor = executors.local;
+#     nodeVersion = "20";
 #   };
 
 {
+  executor,
   nodeVersion ? "18",
 }:
 
 {
-  executor = null;
+  inherit executor;
   
   actions = [
     actions.checkout
@@ -580,6 +739,7 @@ in
 # Comprehensive Python CI workflow with optional steps.
 #
 # Parameters:
+#   - executor (required): Executor to run the job
 #   - pythonVersion (optional): Python version [default: "3.11"]
 #   - usePytest (optional): Run pytest [default: true]
 #   - useMypy (optional): Run mypy type checking [default: true]
@@ -589,14 +749,14 @@ in
 #   - testCommand (optional): Test command [default: "pytest"]
 #
 # Usage:
-#   jobs.test = (jobs.pythonCI {
+#   jobs.test = jobs.pythonCI {
+#     executor = executors.local;
 #     pythonVersion = "3.12";
 #     useMypy = false;
-#   }) // {
-#     executor = executors.local;
 #   };
 
 {
+  executor,
   pythonVersion ? "3.11",
   usePytest ? true,
   useMypy ? true,
@@ -607,7 +767,7 @@ in
 }:
 
 {
-  executor = null;
+  inherit executor;
   
   actions = [
     # Setup
@@ -637,6 +797,8 @@ in
 # Multi-stage pipeline for building, testing, and pushing Docker images.
 #
 # Parameters:
+#   - executor (required): Executor to run all jobs
+#   - jobPrefix (optional): Prefix for job names [default: "docker-"]
 #   - registry (required): Container registry URL
 #   - images (required): List of image configurations (see actions.buildImages)
 #   - runTests (optional): Run tests before pushing [default: true]
@@ -645,22 +807,22 @@ in
 #   - tag (optional): Image tag [default: "latest"]
 #
 # Returns:
-#   Attribute set with jobs: { build, test?, push? }
+#   Attribute set with scoped jobs: { {jobPrefix}build, {jobPrefix}test?, {jobPrefix}push? }
 #
 # Usage:
-#   jobs = (jobs.dockerBuildPush {
+#   jobs = jobs.dockerBuildPush {
+#     executor = executors.local;
+#     jobPrefix = "docker-";  # Creates: docker-build, docker-test, docker-push
 #     registry = "myregistry.io";
 #     images = [
 #       { name = "api"; }
 #       { name = "worker"; }
 #     ];
-#   }) // {
-#     build.executor = executors.local;
-#     test.executor = executors.local;
-#     push.executor = executors.local;
 #   };
 
 {
+  executor,
+  jobPrefix ? "docker-",  # Default prefix to avoid conflicts
   registry,
   images,
   runTests ? true,
@@ -669,10 +831,16 @@ in
   tag ? "latest",
 }:
 
+let
+  # Scoped job names
+  buildJob = "${jobPrefix}build";
+  testJob = "${jobPrefix}test";
+  pushJob = "${jobPrefix}push";
+in
 {
   # Build stage
-  build = {
-    executor = null;
+  ${buildJob} = {
+    inherit executor;
     actions = [
       actions.checkout
     ] ++ (actions.buildImages {
@@ -681,10 +849,10 @@ in
     });
   };
   
-  # Test stage (conditional)
-  test = lib.optionalAttrs runTests {
-    executor = null;
-    needs = [ "build" ];
+  # Test stage
+  ${testJob} = lib.optionalAttrs runTests {
+    inherit executor;
+    needs = [ buildJob ];  # Reference scoped name
     actions = if testCommand != null then [
       (actions.runCommand testCommand)
     ] else [
@@ -695,10 +863,10 @@ in
     ];
   };
   
-  # Push stage (conditional)
-  push = lib.optionalAttrs pushOnSuccess {
-    executor = null;
-    needs = if runTests then [ "test" ] else [ "build" ];
+  # Push stage
+  ${pushJob} = lib.optionalAttrs pushOnSuccess {
+    inherit executor;
+    needs = if runTests then [ testJob ] else [ buildJob ];  # Reference scoped names
     
     actions = lib.flatten (map (image:
       (actions.runCommand "docker push ${registry}/${image.name}:${tag}")
@@ -718,26 +886,28 @@ in
 # Complete pipeline: build → test → deploy
 #
 # Parameters:
+#   - executor (required): Executor to run all jobs
+#   - jobPrefix (optional): Prefix for job names [default: ""]
 #   - language (required): "node" | "python" | "rust"
 #   - version (optional): Language version [default: depends on language]
 #   - deployTarget (optional): Deployment target [default: null (no deploy)]
 #   - deployCommand (optional): Custom deploy command [default: null]
 #
 # Returns:
-#   Attribute set: { build, test, deploy? }
+#   Attribute set: { {jobPrefix}build, {jobPrefix}test, {jobPrefix}deploy? }
 #
 # Usage:
-#   jobs = (jobs.fullCICD {
+#   jobs = jobs.fullCICD {
+#     executor = executors.local;
+#     jobPrefix = "app-";  # Creates: app-build, app-test, app-deploy
 #     language = "node";
 #     version = "20";
 #     deployTarget = "production";
-#   }) // {
-#     build.executor = executors.local;
-#     test.executor = executors.local;
-#     deploy.executor = executors.local;
 #   };
 
 {
+  executor,
+  jobPrefix ? "",  # Allow scoping to avoid conflicts
   language,
   version ? null,
   deployTarget ? null,
@@ -745,6 +915,11 @@ in
 }:
 
 let
+  # Scoped job names
+  buildJob = "${jobPrefix}build";
+  testJob = "${jobPrefix}test";
+  deployJob = "${jobPrefix}deploy";
+  
   defaultVersion = {
     node = "18";
     python = "3.11";
@@ -780,8 +955,8 @@ in
 
 {
   # Build job
-  build = {
-    executor = null;
+  ${buildJob} = {
+    inherit executor;
     actions = [
       actions.checkout
       languageActions.setup
@@ -791,9 +966,9 @@ in
   };
   
   # Test job
-  test = {
-    executor = null;
-    needs = [ "build" ];
+  ${testJob} = {
+    inherit executor;
+    needs = [ buildJob ];  # Reference scoped name
     actions = [
       actions.checkout
       languageActions.setup
@@ -803,9 +978,9 @@ in
   };
   
   # Deploy job (conditional)
-  deploy = lib.optionalAttrs (deployTarget != null) {
-    executor = null;
-    needs = [ "test" ];
+  ${deployJob} = lib.optionalAttrs (deployTarget != null) {
+    inherit executor;
+    needs = [ testJob ];  # Reference scoped name
     
     env = {
       DEPLOY_TARGET = deployTarget;
@@ -839,10 +1014,9 @@ in
 nixactions.mkWorkflow {
   name = "test-my-job";
   
-  jobs = (nixactions.jobs.myJob {
-    param1 = "value";
-  }) // {
+  jobs.test = nixactions.jobs.myJob {
     executor = nixactions.executors.local;
+    param1 = "value";
   };
 }
 ```
@@ -853,28 +1027,13 @@ nixactions.mkWorkflow {
 # examples/test-multi-job.nix
 { nixactions, pkgs }:
 
-let
-  pipeline = nixactions.jobs.dockerPipeline {
-    registry = "test.io";
-    images = [ { name = "testapp"; } ];
-  };
-in
-
 nixactions.mkWorkflow {
   name = "test-pipeline";
   
-  jobs = {
-    build = pipeline.build // {
-      executor = nixactions.executors.local;
-    };
-    
-    test = pipeline.test // {
-      executor = nixactions.executors.local;
-    };
-    
-    push = pipeline.push // {
-      executor = nixactions.executors.local;
-    };
+  jobs = nixactions.jobs.dockerPipeline {
+    executor = nixactions.executors.local;
+    registry = "test.io";
+    images = [ { name = "testapp"; } ];
   };
 }
 ```
@@ -894,11 +1053,16 @@ cat result/bin/test-my-job
 ### 1. Optional Jobs
 
 ```nix
+{ executor, runTests ? true }:
+
 {
-  build = { /* ... */ };
+  build = {
+    inherit executor;
+    actions = [ /* ... */ ];
+  };
   
   test = lib.optionalAttrs runTests {
-    executor = null;
+    inherit executor;
     needs = [ "build" ];
     actions = [ /* ... */ ];
   };
@@ -908,8 +1072,10 @@ cat result/bin/test-my-job
 ### 2. Conditional Actions
 
 ```nix
+{ executor, enableLint ? true, enableTest ? true }:
+
 {
-  executor = null;
+  inherit executor;
   actions = [
     actions.checkout
   ]
@@ -921,33 +1087,37 @@ cat result/bin/test-my-job
 ### 3. Dynamic Job Names
 
 ```nix
+{ executor, platforms ? [ "linux" "macos" "windows" ] }:
+
 lib.listToAttrs (map (platform: {
   name = "build-${platform}";
   value = {
-    executor = null;
+    inherit executor;
     env.PLATFORM = platform;
     actions = [ /* ... */ ];
   };
-}) [ "linux" "macos" "windows" ])
+}) platforms)
 ```
 
 ### 4. Shared Configuration
 
 ```nix
+{ executor, nodeVersion ? "18" }:
+
 let
   commonActions = [
     actions.checkout
-    (actions.setupNode { version = "18"; })
+    (actions.setupNode { version = nodeVersion; })
   ];
 in
 {
   lint = {
-    executor = null;
+    inherit executor;
     actions = commonActions ++ [ actions.npm.lint ];
   };
   
   test = {
-    executor = null;
+    inherit executor;
     actions = commonActions ++ [ actions.npm.test ];
   };
 }
@@ -967,14 +1137,42 @@ in
 }
 ```
 
-### ✅ DO: Let user specify executor
+### ❌ DON'T: Use executor = null (forces merge syntax)
 
 ```nix
-# GOOD - User can choose executor
+# BAD - Requires merge syntax
+{ param1 ? "value" }:
+
 {
-  executor = null;  # User MUST specify
+  executor = null;  # Forces user to use //
   actions = [ /* ... */ ];
 }
+
+# Usage requires merge:
+jobs.test = (jobs.myJob { param1 = "foo"; }) // {
+  executor = executors.local;  # Awkward!
+};
+```
+
+### ✅ DO: Require executor as parameter
+
+```nix
+# GOOD - Executor is explicit parameter
+{
+  executor,  # Required parameter
+  param1 ? "value",
+}:
+
+{
+  inherit executor;
+  actions = [ /* ... */ ];
+}
+
+# Usage is clean:
+jobs.test = jobs.myJob {
+  executor = executors.local;
+  param1 = "foo";
+};
 ```
 
 ### ❌ DON'T: Return raw action list
@@ -1028,6 +1226,49 @@ in
 }
 ```
 
+### ❌ DON'T: Use continueOnError
+
+```nix
+# BAD - continueOnError is an anti-pattern
+{
+  executor = null;
+  continueOnError = true;  # NEVER DO THIS
+  actions = [ /* ... */ ];
+}
+```
+
+**Why it's bad:**
+- Hides real failures
+- Makes debugging harder
+- Creates unreliable workflows
+- Leads to cascading failures
+
+### ✅ DO: Handle errors explicitly
+
+```nix
+# GOOD - Handle errors with conditions
+{
+  executor = null;
+  actions = [
+    {
+      name = "risky-operation";
+      bash = ''
+        if ! some-command; then
+          echo "Command failed, but continuing with fallback"
+          fallback-command
+        fi
+      '';
+    }
+    
+    {
+      name = "cleanup";
+      "if" = "always()";  # Always run cleanup
+      bash = "cleanup-resources";
+    }
+  ];
+}
+```
+
 ---
 
 ## Checklist
@@ -1038,12 +1279,18 @@ Before submitting a new job template:
 - [ ] Comprehensive documentation header
 - [ ] All parameters documented with types, defaults, and descriptions
 - [ ] Returns proper job structure (not just action list)
-- [ ] `executor = null` to let user specify
-- [ ] Includes usage example in documentation
+- [ ] **`executor` is a required parameter** - NOT `executor = null`
+- [ ] **Inputs/outputs are configurable** - no hardcoded artifact names
+- [ ] **Environment variables are configurable** - no hardcoded env var names
+- [ ] **envProviders are user-configurable** - not hardcoded in template
+- [ ] **Multi-job templates use `jobPrefix` parameter** - to avoid name conflicts
+- [ ] **Internal `needs` use scoped job names** - reference variables, not strings
+- [ ] Includes usage example in documentation (without merge syntax `//`)
 - [ ] Tested with example workflow
 - [ ] Added to `lib/jobs/default.nix` exports
 - [ ] Handles edge cases gracefully
 - [ ] Uses lib.optional/optionalAttrs for conditional logic
+- [ ] **Does NOT use continueOnError** - this is an anti-pattern
 
 ---
 
@@ -1055,10 +1302,13 @@ Jobs should use actions from `lib/actions/`:
 # Good - reuse existing actions
 { pkgs, lib, actions }:
 
-{ nodeVersion ? "18" }:
+{
+  executor,
+  nodeVersion ? "18",
+}:
 
 {
-  executor = null;
+  inherit executor;
   actions = [
     actions.checkout              # From lib/actions/
     (actions.setupNode { 
@@ -1076,88 +1326,331 @@ If an action doesn't exist yet, consider:
 
 ---
 
-## Inputs/Outputs/Needs
+## Configurable Inputs/Outputs
 
-For comprehensive guide on designing job templates with inputs, outputs, and dependencies, see:
+**Job templates MUST allow users to configure artifact names and paths.**
 
-📘 **[INPUTS_OUTPUTS_DESIGN.md](./INPUTS_OUTPUTS_DESIGN.md)**
+### ✅ DO: Make inputs/outputs configurable
 
-### Quick Reference
-
-**Outputs** - Save artifacts for other jobs:
 ```nix
+# lib/jobs/node-build.nix
+{ pkgs, lib, actions }:
+
 {
-  executor = null;
-  actions = [ /* build actions */ ];
+  executor,  # Required
+  
+  # Allow user to customize output artifact name and path
+  outputArtifactName ? "dist",
+  outputPath ? "dist/",
+  
+  # Allow user to specify required input artifacts
+  inputArtifacts ? [],
+}:
+
+{
+  inherit executor;
+  
+  # User-configurable inputs
+  inputs = inputArtifacts;
+  
+  actions = [
+    actions.checkout
+    (actions.setupNode { version = "18"; })
+    actions.npm.install
+    actions.npm.build
+  ];
+  
+  # User-configurable outputs
   outputs = {
-    dist = "dist/";           # Save dist/ as "dist" artifact
-    binary = "bin/app";       # Save bin/app as "binary" artifact
+    ${outputArtifactName} = outputPath;
   };
 }
 ```
 
-**Inputs** - Restore artifacts from other jobs:
+**Usage:**
 ```nix
-{
-  executor = null;
-  needs = [ "build" ];        # Wait for build job
-  inputs = [ "dist" ];        # Restore "dist" artifact
-  actions = [ /* use dist/ */ ];
-}
-```
-
-**Needs** - Job dependencies:
-```nix
-{
-  executor = null;
-  needs = [ "build" "lint" ]; # Wait for both jobs
-  actions = [ /* ... */ ];
-}
-```
-
-### For Job Templates
-
-**Document inputs/outputs clearly:**
-```nix
-# Job Template
-#
-# Inputs:
-#   - build-artifact: Build output from previous job
-#
-# Outputs:
-#   - test-results: Test execution results
-#
-# Needs:
-#   - User must set to job that produces build-artifact
-```
-
-**Use optional inputs/outputs:**
-```nix
-{ saveResults ? false }:
-
-{
-  inputs = [ "dist" ];
-  outputs = lib.optionalAttrs saveResults {
-    test-results = "results/";
-  };
-}
-```
-
-**Set internal needs in multi-job templates:**
-```nix
-{
-  build = {
-    outputs = { dist = "dist/"; };
+# User can customize artifact names to avoid conflicts
+jobs = {
+  buildFrontend = jobs.nodeBuild {
+    executor = executors.local;
+    outputArtifactName = "frontend-dist";
+    outputPath = "packages/frontend/dist/";
   };
   
-  test = {
-    needs = [ "build" ];      # Template sets dependency
-    inputs = [ "dist" ];       # Template uses output
+  buildBackend = jobs.nodeBuild {
+    executor = executors.local;
+    outputArtifactName = "backend-dist";
+    outputPath = "packages/backend/dist/";
+  };
+  
+  deploy = {
+    executor = executors.local;
+    needs = [ "buildFrontend" "buildBackend" ];
+    inputs = [ "frontend-dist" "backend-dist" ];  # Custom names
+    actions = [ /* deploy */ ];
+  };
+};
+```
+
+### ❌ DON'T: Hardcode artifact names
+
+```nix
+# BAD - Forces users to use specific artifact name
+{
+  executor,
+  outputs = {
+    dist = "dist/";  # Hardcoded name!
   };
 }
 ```
 
-See [INPUTS_OUTPUTS_DESIGN.md](./INPUTS_OUTPUTS_DESIGN.md) for complete patterns and examples.
+### Pattern: Optional Outputs
+
+```nix
+{
+  executor,
+  saveArtifacts ? true,
+  artifactName ? "build-output",
+  artifactPath ? "dist/",
+}:
+
+{
+  inherit executor;
+  actions = [ /* ... */ ];
+  
+  # Conditionally save outputs
+  outputs = lib.optionalAttrs saveArtifacts {
+    ${artifactName} = artifactPath;
+  };
+}
+```
+
+### Pattern: Multiple Configurable Outputs
+
+```nix
+{
+  executor,
+  saveDist ? true,
+  distName ? "dist",
+  distPath ? "dist/",
+  
+  saveBinary ? false,
+  binaryName ? "binary",
+  binaryPath ? "bin/app",
+}:
+
+{
+  inherit executor;
+  actions = [ /* ... */ ];
+  
+  outputs = 
+    (lib.optionalAttrs saveDist { ${distName} = distPath; })
+    // (lib.optionalAttrs saveBinary { ${binaryName} = binaryPath; });
+}
+```
+
+### Documentation Requirements
+
+Always document configurable inputs/outputs:
+
+```nix
+# Node.js Build Job
+#
+# Parameters:
+#   - outputArtifactName (optional): Name of output artifact [default: "dist"]
+#   - outputPath (optional): Path to build output [default: "dist/"]
+#   - inputArtifacts (optional): List of required input artifacts [default: []]
+#
+# Outputs:
+#   - {outputArtifactName}: Build artifacts (configurable name)
+#
+# Inputs:
+#   - {inputArtifacts}: Required artifacts from previous jobs (configurable)
+```
+
+---
+
+## Configurable Environment Variables
+
+**Job templates MUST allow users to configure environment variable sources.**
+
+### ✅ DO: Make environment variable sources configurable
+
+```nix
+# lib/jobs/deploy.nix
+{ pkgs, lib, actions }:
+
+{
+  # Allow user to specify which env vars to use
+  databaseUrlVar ? "DATABASE_URL",
+  apiKeyVar ? "API_KEY",
+  deployTargetVar ? "DEPLOY_TARGET",
+  
+  # Allow custom env providers
+  envProviders ? [],
+}:
+
+{
+  executor = null;
+  
+  # Use provided env providers
+  inherit envProviders;
+  
+  actions = [
+    {
+      name = "deploy-application";
+      bash = ''
+        # Use configurable env var names
+        echo "Deploying to ''${${deployTargetVar}}"
+        echo "Database: ''${${databaseUrlVar}}"
+        
+        # API key is available via configured var name
+        if [ -n "''${${apiKeyVar}:-}" ]; then
+          echo "API key configured"
+        fi
+      '';
+    }
+  ];
+}
+```
+
+**Usage:**
+```nix
+jobs.deploy = (jobs.deploy {
+  # User specifies which env vars to use
+  databaseUrlVar = "PROD_DATABASE_URL";
+  apiKeyVar = "PROD_API_KEY";
+  deployTargetVar = "PROD_TARGET";
+  
+  # User controls env providers
+  envProviders = [
+    (platform.envProviders.sops { 
+      file = ./secrets.sops.yaml; 
+    })
+    (platform.envProviders.required [ 
+      "PROD_DATABASE_URL" 
+      "PROD_API_KEY"
+      "PROD_TARGET"
+    ])
+  ];
+}) // {
+  executor = executors.local;
+};
+```
+
+### Pattern: Environment Variable Mapping
+
+```nix
+{
+  # Let user map external env vars to internal names
+  envMapping ? {
+    databaseUrl = "DATABASE_URL";
+    apiKey = "API_KEY";
+    region = "AWS_REGION";
+  },
+}:
+
+{
+  executor = null;
+  
+  actions = [{
+    name = "use-mapped-vars";
+    bash = ''
+      # Use mapped variable names
+      DB_URL=''${${envMapping.databaseUrl}}
+      KEY=''${${envMapping.apiKey}}
+      REGION=''${${envMapping.region}}
+      
+      echo "Connecting to $DB_URL in $REGION"
+    '';
+  }];
+}
+```
+
+### Pattern: Optional Environment Requirements
+
+```nix
+{
+  requiredEnvVars ? [],
+  optionalEnvVars ? [],
+  envProviders ? [],
+}:
+
+{
+  executor = null;
+  
+  # Add required env validation if specified
+  envProviders = envProviders 
+    ++ lib.optional (requiredEnvVars != []) 
+      (platform.envProviders.required requiredEnvVars);
+  
+  actions = [{
+    bash = ''
+      # Check optional vars
+      ${lib.concatMapStringsSep "\n" (var: ''
+        if [ -n "''${${var}:-}" ]; then
+          echo "✓ ${var} configured"
+        else
+          echo "ℹ ${var} not set (optional)"
+        fi
+      '') optionalEnvVars}
+    '';
+  }];
+}
+```
+
+### ❌ DON'T: Hardcode environment variable names
+
+```nix
+# BAD - Forces specific env var names
+{
+  executor = null;
+  actions = [{
+    bash = ''
+      echo "Database: $DATABASE_URL"  # Hardcoded!
+      echo "API Key: $API_KEY"        # Hardcoded!
+    '';
+  }];
+}
+```
+
+### ❌ DON'T: Hardcode env providers
+
+```nix
+# BAD - Forces specific secret management
+{
+  executor = null;
+  envProviders = [
+    (platform.envProviders.sops { file = ./secrets.yaml; })  # Hardcoded!
+  ];
+}
+```
+
+### Documentation Requirements
+
+Always document configurable environment variables:
+
+```nix
+# Deployment Job
+#
+# Parameters:
+#   - databaseUrlVar (optional): Env var name for database URL [default: "DATABASE_URL"]
+#   - apiKeyVar (optional): Env var name for API key [default: "API_KEY"]
+#   - envProviders (optional): List of env providers [default: []]
+#
+# Environment Variables (configurable names):
+#   The job expects these environment variables (names can be customized):
+#   - {databaseUrlVar}: Database connection URL (required)
+#   - {apiKeyVar}: API authentication key (required)
+#
+# Example:
+#   jobs.deploy = (jobs.deploy {
+#     databaseUrlVar = "PROD_DB_URL";
+#     apiKeyVar = "PROD_KEY";
+#     envProviders = [
+#       (platform.envProviders.sops { file = ./prod-secrets.yaml; })
+#     ];
+#   }) // { executor = executors.local; };
 
 ---
 

@@ -2,121 +2,118 @@
 
 {
   image ? "nixos/nix",
-  mode ? "mount",  # "mount" | "build"
+  copyRepo ? true,  # Copy repository to job directory (like LOCAL executor)
+  name ? null,      # Optional custom name (defaults to "oci-${sanitized-image}")
 }:
-
-assert lib.assertMsg (mode == "mount" || mode == "build") 
-  "OCI executor mode must be 'mount' or 'build', got: ${mode}";
 
 let
   # Sanitize image name for bash variable names (replace - / : with _)
   safeName = builtins.replaceStrings ["-" "/" ":"] ["_" "_" "_"] image;
   
+  # Use custom name if provided, otherwise auto-generate from image
+  executorName = if name != null then name else "oci-${safeName}";
+  
+  # Sanitize executor name for bash variable names
+  # (custom names might have dashes/special chars)
+  sanitizedExecutorName = builtins.replaceStrings ["-" "/" ":"] ["_" "_" "_"] executorName;
+  
   # Import helpers
   actionRunner = import ./action-runner.nix { inherit lib pkgs; };
-  ociHelpers = import ./oci-helpers.nix { inherit pkgs lib; };
-  
-  # Import runtime helpers for build mode
-  loggingLib = import ../logging.nix { inherit pkgs lib; };
-  retryLib = import ../retry.nix { inherit lib pkgs; };
-  runtimeHelpers = import ../runtime-helpers.nix { inherit pkgs lib; };
 in
 
 mkExecutor {
-  name = "oci-${safeName}-${mode}";
+  inherit copyRepo;
+  name = executorName;
   
-  # Setup container workspace
-  # Expects $WORKFLOW_ID to be set
-  setupWorkspace = { actionDerivations }: 
-    if mode == "mount" then ''
-      # Mode: MOUNT - mount /nix/store from host
-      source ${ociHelpers}/bin/nixactions-oci-executor
-      export DOCKER=${pkgs.docker}/bin/docker
-      setup_oci_workspace "${image}" "${safeName}_${mode}"
-    ''
-    else # mode == "build"
-      let
-        # Build custom image with all action derivations included
-        actionPaths = map (drv: drv) actionDerivations;
-        
-        customImage = pkgs.dockerTools.buildLayeredImage {
-          name = "nixactions-${safeName}";
-          tag = "latest";
-          
-          contents = pkgs.buildEnv {
-            name = "nixactions-root";
-            paths = [ 
-              pkgs.bash 
-              pkgs.coreutils 
-              pkgs.findutils
-              pkgs.gnugrep
-              pkgs.gnused
-              loggingLib.loggingHelpers
-              retryLib.retryHelpers
-              runtimeHelpers
-            ] ++ actionPaths;
-          };
-          
-          config = {
-            Cmd = [ "sleep" "infinity" ];
-            WorkingDir = "/workspace";
-          };
-        };
-      in ''
-        # Mode: BUILD - build custom image with actions
-        # Lazy init - only create if not exists
-        if [ -z "''${CONTAINER_ID_OCI_${safeName}_${mode}:-}" ]; then
-          # Load custom image
-          echo "→ Loading custom OCI image with actions (this may take a while)..."
-          ${pkgs.docker}/bin/docker load < ${customImage}
-          
-          # Create and start container from custom image
-          CONTAINER_ID_OCI_${safeName}_${mode}=$(${pkgs.docker}/bin/docker create \
-            nixactions-${safeName}:latest)
-          
-          ${pkgs.docker}/bin/docker start "$CONTAINER_ID_OCI_${safeName}_${mode}"
-          
-          export CONTAINER_ID_OCI_${safeName}_${mode}
-          
-          # Create workspace directory in container
-          ${pkgs.docker}/bin/docker exec "$CONTAINER_ID_OCI_${safeName}_${mode}" mkdir -p /workspace
-          
-          _log_workflow executor "oci-${safeName}-build" container "$CONTAINER_ID_OCI_${safeName}_${mode}" workspace "/workspace" event "→" "Workspace created"
-          echo "  Image includes: bash, coreutils, and all action derivations"
-        fi
-      '';
+  # === WORKSPACE LEVEL ===
   
-  # Cleanup container
-  cleanupWorkspace = ''
-    if [ -n "''${CONTAINER_ID_OCI_${safeName}_${mode}:-}" ]; then
-      _log_workflow executor "oci-${safeName}-${mode}" container "$CONTAINER_ID_OCI_${safeName}_${mode}" event "→" "Stopping and removing container"
-      ${pkgs.docker}/bin/docker stop "$CONTAINER_ID_OCI_${safeName}_${mode}" >/dev/null 2>&1 || true
-      ${pkgs.docker}/bin/docker rm "$CONTAINER_ID_OCI_${safeName}_${mode}" >/dev/null 2>&1 || true
+  # Setup workspace directory on host (called once at workflow start)
+  setupWorkspace = { actionDerivations }: ''
+    # Create workspace directory on host for all jobs
+    WORKSPACE_DIR_${sanitizedExecutorName}="/tmp/nixactions/$WORKFLOW_ID/${executorName}"
+    mkdir -p "$WORKSPACE_DIR_${sanitizedExecutorName}"
+    export WORKSPACE_DIR_${sanitizedExecutorName}
+    
+    _log_workflow executor "${executorName}" workspace "$WORKSPACE_DIR_${sanitizedExecutorName}" action_count "${toString (builtins.length actionDerivations)}" event "→" "Workspace created (${toString (builtins.length actionDerivations)} actions)"
+  '';
+  
+  # Cleanup workspace directory on host (called once at workflow end)
+  cleanupWorkspace = { actionDerivations }: ''
+    if [ -n "''${WORKSPACE_DIR_${sanitizedExecutorName}:-}" ] && [ -d "$WORKSPACE_DIR_${sanitizedExecutorName}" ]; then
+      if [ "''${NIXACTIONS_KEEP_WORKSPACE:-}" != "1" ]; then
+        _log_workflow executor "${executorName}" workspace "$WORKSPACE_DIR_${sanitizedExecutorName}" event "→" "Cleaning up workspace"
+        rm -rf "$WORKSPACE_DIR_${sanitizedExecutorName}"
+      else
+        _log_workflow executor "${executorName}" workspace "$WORKSPACE_DIR_${sanitizedExecutorName}" event "→" "Workspace preserved"
+      fi
     fi
   '';
   
-  # Execute job in container
-  executeJob = { jobName, actionDerivations, env }: ''
-    if [ -z "''${CONTAINER_ID_OCI_${safeName}_${mode}:-}" ]; then
-      _log_workflow executor "oci-${safeName}-${mode}" event "✗" "Workspace not initialized"
-      exit 1
+  # === JOB LEVEL ===
+  
+  # Setup job: create directory, copy repo, start container
+  setupJob = { jobName, actionDerivations }: ''
+    # 1. Create job directory on host
+    JOB_DIR_HOST="$WORKSPACE_DIR_${sanitizedExecutorName}/jobs/${jobName}"
+    mkdir -p "$JOB_DIR_HOST"
+    
+    # 2. Copy repository to job directory (if copyRepo enabled)
+    if [ "''${NIXACTIONS_COPY_REPO:-${if copyRepo then "true" else "false"}}" = "true" ]; then
+      _log_job "${jobName}" event "→" "Copying repository to job directory"
+      
+      # Use rsync if available, otherwise cp
+      if command -v rsync &> /dev/null; then
+        rsync -a \
+          --exclude='.git' \
+          --exclude='result' \
+          --exclude='result-*' \
+          --exclude='.direnv' \
+          --exclude='target' \
+          --exclude='node_modules' \
+          "$PWD/" "$JOB_DIR_HOST/"
+      else
+        # Fallback to cp with filters
+        (
+          cd "$PWD"
+          find . -maxdepth 1 ! -name . ! -name '.git' ! -name 'result*' ! -name '.direnv' \
+            -exec cp -r {} "$JOB_DIR_HOST/" \;
+        )
+      fi
+      
+      _log_job "${jobName}" event "✓" "Repository copied"
     fi
-    ${pkgs.docker}/bin/docker exec \
+    
+    # 3. Start container for this job with mount
+    JOB_CONTAINER_${sanitizedExecutorName}_${jobName}=$(${pkgs.docker}/bin/docker run -d \
+      -v "$JOB_DIR_HOST:/workspace" \
+      -v /nix/store:/nix/store:ro \
       -e WORKFLOW_NAME \
       -e NIXACTIONS_LOG_FORMAT \
-      "$CONTAINER_ID_OCI_${safeName}_${mode}" \
+      ${image} sleep infinity)
+    
+    export JOB_CONTAINER_${sanitizedExecutorName}_${jobName}
+    
+    _log_job "${jobName}" executor "${executorName}" container "$JOB_CONTAINER_${sanitizedExecutorName}_${jobName}" event "→" "Container started"
+  '';
+  
+  # Execute actions in container
+  executeJob = { jobName, actionDerivations, env }: ''
+    ${pkgs.docker}/bin/docker exec \
+      "$JOB_CONTAINER_${sanitizedExecutorName}_${jobName}" \
       bash -c ${lib.escapeShellArg ''
         set -uo pipefail
+        cd /workspace
+        
+        # Source helpers
         source /nix/store/*-nixactions-logging/bin/nixactions-logging
         source /nix/store/*-nixactions-retry/bin/nixactions-retry
         source /nix/store/*-nixactions-runtime/bin/nixactions-runtime
-        JOB_DIR="/workspace/jobs/${jobName}"
-        mkdir -p "$JOB_DIR"
-        cd "$JOB_DIR"
-        JOB_ENV="$JOB_DIR/.job-env"
+        
+        JOB_ENV="/workspace/.job-env"
         touch "$JOB_ENV"
         export JOB_ENV
-        _log_job "${jobName}" executor "oci-${safeName}-${mode}" workdir "$JOB_DIR" event "▶" "Job starting"
+        
+        _log_job "${jobName}" executor "${executorName}" workdir "/workspace" event "▶" "Job starting in container"
         
         # Set job-level environment variables
         ${lib.concatStringsSep "\n" (
@@ -124,6 +121,7 @@ mkExecutor {
             "export ${k}=${lib.escapeShellArg (toString v)}"
           ) env
         )}
+        
         ACTION_FAILED=false
         ${lib.concatMapStringsSep "\n" (action: 
           let
@@ -135,6 +133,7 @@ mkExecutor {
               timingCommand = "date +%s%N 2>/dev/null || date +%s";
             }
         ) actionDerivations}
+        
         if [ "$ACTION_FAILED" = "true" ]; then
           _log_job "${jobName}" event "✗" "Job failed due to action failures"
           exit 1
@@ -142,19 +141,22 @@ mkExecutor {
       ''}
   '';
   
+  # Cleanup job: stop and remove container
+  cleanupJob = { jobName }: ''
+    _log_job "${jobName}" executor "${executorName}" container "$JOB_CONTAINER_${sanitizedExecutorName}_${jobName}" event "→" "Stopping container"
+    ${pkgs.docker}/bin/docker stop "$JOB_CONTAINER_${sanitizedExecutorName}_${jobName}" >/dev/null 2>&1 || true
+    ${pkgs.docker}/bin/docker rm "$JOB_CONTAINER_${sanitizedExecutorName}_${jobName}" >/dev/null 2>&1 || true
+  '';
+  
+  # === ARTIFACTS ===
+  
   
   # Save artifact (executed on HOST after job completes)
-  # Uses docker cp to copy from container to host
+  # Artifacts are already on host in $WORKSPACE_DIR_${sanitizedExecutorName}/jobs/${jobName}/
   saveArtifact = { name, path, jobName }: ''
-    if [ -z "''${CONTAINER_ID_OCI_${safeName}_${mode}:-}" ]; then
-      _log_workflow event "✗" "Container not initialized"
-      return 1
-    fi
+    JOB_DIR_HOST="$WORKSPACE_DIR_${sanitizedExecutorName}/jobs/${jobName}"
     
-    JOB_DIR="/workspace/jobs/${jobName}"
-    
-    # Check if path exists in container
-    if ${pkgs.docker}/bin/docker exec "$CONTAINER_ID_OCI_${safeName}_${mode}" test -e "$JOB_DIR/${path}"; then
+    if [ -e "$JOB_DIR_HOST/${path}" ]; then
       rm -rf "$NIXACTIONS_ARTIFACTS_DIR/${name}"
       mkdir -p "$NIXACTIONS_ARTIFACTS_DIR/${name}"
       
@@ -164,45 +166,38 @@ mkExecutor {
         mkdir -p "$NIXACTIONS_ARTIFACTS_DIR/${name}/$PARENT_DIR"
       fi
       
-      # Copy from container to host
-      ${pkgs.docker}/bin/docker cp \
-        "$CONTAINER_ID_OCI_${safeName}_${mode}:$JOB_DIR/${path}" \
-        "$NIXACTIONS_ARTIFACTS_DIR/${name}/${path}"
+      # Copy from job directory to artifacts
+      cp -r "$JOB_DIR_HOST/${path}" "$NIXACTIONS_ARTIFACTS_DIR/${name}/${path}"
     else
-      _log_workflow artifact "${name}" path "${path}" event "✗" "Path not found"
+      _log_workflow artifact "${name}" path "${path}" event "✗" "Path not found in $JOB_DIR_HOST"
       return 1
     fi
   '';
   
   # Restore artifact (executed on HOST before job starts)
-  # Uses docker cp to copy from host to container
+  # Copy from artifacts to job directory on host (will be visible in container via mount)
   restoreArtifact = { name, path ? ".", jobName }: ''
-    if [ -z "''${CONTAINER_ID_OCI_${safeName}_${mode}:-}" ]; then
-      _log_workflow event "✗" "Container not initialized"
-      return 1
-    fi
-    
     if [ -e "$NIXACTIONS_ARTIFACTS_DIR/${name}" ]; then
-      JOB_DIR="/workspace/jobs/${jobName}"
+      JOB_DIR_HOST="$WORKSPACE_DIR_${sanitizedExecutorName}/jobs/${jobName}"
       
       # Determine target directory
       if [ "${path}" = "." ] || [ "${path}" = "./" ]; then
         # Restore to root of job directory (default behavior)
-        ${pkgs.docker}/bin/docker exec "$CONTAINER_ID_OCI_${safeName}_${mode}" mkdir -p "$JOB_DIR"
+        mkdir -p "$JOB_DIR_HOST"
         
         for item in "$NIXACTIONS_ARTIFACTS_DIR/${name}"/*; do
           if [ -e "$item" ]; then
-            ${pkgs.docker}/bin/docker cp "$item" "$CONTAINER_ID_OCI_${safeName}_${mode}:$JOB_DIR/"
+            cp -r "$item" "$JOB_DIR_HOST/"
           fi
         done
       else
         # Restore to custom path
-        TARGET_DIR="$JOB_DIR/${path}"
-        ${pkgs.docker}/bin/docker exec "$CONTAINER_ID_OCI_${safeName}_${mode}" mkdir -p "$TARGET_DIR"
+        TARGET_DIR="$JOB_DIR_HOST/${path}"
+        mkdir -p "$TARGET_DIR"
         
         for item in "$NIXACTIONS_ARTIFACTS_DIR/${name}"/*; do
           if [ -e "$item" ]; then
-            ${pkgs.docker}/bin/docker cp "$item" "$CONTAINER_ID_OCI_${safeName}_${mode}:$TARGET_DIR/"
+            cp -r "$item" "$TARGET_DIR/"
           fi
         done
       fi

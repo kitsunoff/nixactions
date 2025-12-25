@@ -14,24 +14,57 @@ pkgs.writeScriptBin "nixactions-local-executor" ''
   # Usage: setup_local_workspace
   # Expects: $WORKFLOW_ID
   setup_local_workspace() {
-    # Lazy init - only create if not exists
-    if [ -z "''${WORKSPACE_DIR_LOCAL:-}" ]; then
-      WORKSPACE_DIR_LOCAL="/tmp/nixactions/$WORKFLOW_ID"
+    WORKSPACE_DIR_LOCAL="/tmp/nixactions/$WORKFLOW_ID"
+    export WORKSPACE_DIR_LOCAL
+    
+    # Lazy init - only create if not exists (use lock file)
+    if [ ! -f "$WORKSPACE_DIR_LOCAL/.initialized" ]; then
       mkdir -p "$WORKSPACE_DIR_LOCAL"
-      export WORKSPACE_DIR_LOCAL
       _log_workflow executor "local" workspace "$WORKSPACE_DIR_LOCAL" event "→" "Workspace created"
+      
+      # Mark as initialized
+      touch "$WORKSPACE_DIR_LOCAL/.initialized"
     fi
   }
   
   # Setup job directory within local workspace
   # Usage: setup_local_job "job_name"
   # Expects: $WORKSPACE_DIR_LOCAL
+  # Expects: $NIXACTIONS_COPY_REPO (optional, default: true)
   # Exports: $JOB_DIR, $JOB_ENV
   setup_local_job() {
     local job_name=$1
     
     JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/$job_name"
     mkdir -p "$JOB_DIR"
+    
+    # Copy repository to job directory for isolation
+    # Each job gets its own fresh copy
+    if [ "''${NIXACTIONS_COPY_REPO:-true}" = "true" ]; then
+      _log_job "$job_name" event "→" "Copying repository to job directory"
+      
+      # Use rsync if available, otherwise cp
+      if command -v rsync &> /dev/null; then
+        rsync -a \
+          --exclude='.git' \
+          --exclude='result' \
+          --exclude='result-*' \
+          --exclude='.direnv' \
+          --exclude='target' \
+          --exclude='node_modules' \
+          "$PWD/" "$JOB_DIR/"
+      else
+        # Fallback to cp with filters
+        (
+          cd "$PWD"
+          find . -maxdepth 1 ! -name . ! -name '.git' ! -name 'result*' ! -name '.direnv' \
+            -exec cp -r {} "$JOB_DIR/" \;
+        )
+      fi
+      
+      _log_job "$job_name" event "✓" "Repository copied"
+    fi
+    
     cd "$JOB_DIR"
     
     # Create job-specific env file INSIDE workspace
@@ -44,14 +77,18 @@ pkgs.writeScriptBin "nixactions-local-executor" ''
   
   # Cleanup local workspace
   # Usage: cleanup_local_workspace
-  # Expects: $WORKSPACE_DIR_LOCAL, $NIXACTIONS_KEEP_WORKSPACE
+  # Expects: $WORKFLOW_ID (required), $NIXACTIONS_KEEP_WORKSPACE (optional)
+  # Note: Can use $WORKSPACE_DIR_LOCAL if already set, otherwise derives from $WORKFLOW_ID
   cleanup_local_workspace() {
-    if [ -n "''${WORKSPACE_DIR_LOCAL:-}" ]; then
+    # Determine workspace directory
+    local workspace_dir="''${WORKSPACE_DIR_LOCAL:-/tmp/nixactions/$WORKFLOW_ID}"
+    
+    if [ -d "$workspace_dir" ]; then
       if [ "''${NIXACTIONS_KEEP_WORKSPACE:-}" != "1" ]; then
-        echo "→ Cleaning up local workspace: $WORKSPACE_DIR_LOCAL"
-        rm -rf "$WORKSPACE_DIR_LOCAL"
+        echo "→ Cleaning up local workspace: $workspace_dir"
+        rm -rf "$workspace_dir"
       else
-        _log_workflow executor "local" workspace "$WORKSPACE_DIR_LOCAL" event "→" "Workspace preserved"
+        _log_workflow executor "local" workspace "$workspace_dir" event "→" "Workspace preserved"
       fi
     fi
   }

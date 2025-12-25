@@ -94,16 +94,14 @@ nix run ..#example-secrets
 - Workflow/job/action-level environment variables
 - Runtime environment override
 - Environment precedence
-- Secrets validation with `requireEnv`
-- Integration patterns for 6 secret managers:
-  - SOPS
-  - HashiCorp Vault
-  - 1Password
-  - Age encryption
-  - Bitwarden
-  - Environment variables
+- Secrets validation with `envProviders.required`
+- Integration with env-providers:
+  - SOPS (encrypted files)
+  - File (.env files)
+  - Static (hardcoded values)
+  - Required (validation)
 
-**Note:** Examples show integration patterns, actual secret files not included.
+**Note:** Uses env-providers for flexible secret management.
 
 ---
 

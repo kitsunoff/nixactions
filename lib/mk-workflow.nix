@@ -33,11 +33,16 @@ let
     format = logging.format or "structured";
     level = logging.level or "info";
   };
+  
+  # Filter out empty jobs created by lib.optionalAttrs
+  # This happens when job templates use lib.optionalAttrs with false condition
+  nonEmptyJobs = lib.filterAttrs (name: job: job != {} && (job.actions or null) != null) jobs;
+  
   # Validate unique artifact names across all jobs
   allOutputs = lib.flatten (
     lib.mapAttrsToList (jobName: job: 
       lib.attrNames (job.outputs or {})
-    ) jobs
+    ) nonEmptyJobs
   );
   
   duplicateArtifacts = lib.filter 
@@ -56,17 +61,17 @@ let
     in
     if needs == []
     then 0
-    else 1 + lib.foldl' lib.max 0 (map (dep: calcDepth dep jobs.${dep}) needs);
+    else 1 + lib.foldl' lib.max 0 (map (dep: calcDepth dep nonEmptyJobs.${dep}) needs);
   
   # Depths for all jobs
-  depths = lib.mapAttrs (name: job: calcDepth name job) jobs;
+  depths = lib.mapAttrs (name: job: calcDepth name job) nonEmptyJobs;
   
   # Max depth
   maxDepth = lib.foldl' lib.max 0 (lib.attrValues depths);
   
   # Group jobs by level
   levels = lib.genList (level:
-    lib.filterAttrs (name: job: depths.${name} == level) jobs
+    lib.filterAttrs (name: job: depths.${name} == level) nonEmptyJobs
   ) (maxDepth + 1);
   
   # Extract deps from actions
@@ -140,8 +145,44 @@ let
         jobTimeout = job.timeout or timeout;
       in
         map (toActionDerivation jobRetry jobTimeout) job.actions
-    ) jobs
+    ) nonEmptyJobs
   ));
+  
+  # Collect all unique executors (by name) for cleanup
+  # We need to deduplicate by executor.name, not by reference
+  allExecutors = 
+    let
+      executorsByName = lib.foldl' (acc: job:
+        if acc ? ${job.executor.name}
+        then acc  # Already have this executor
+        else acc // { ${job.executor.name} = job.executor; }
+      ) {} (lib.attrValues nonEmptyJobs);
+    in
+      lib.attrValues executorsByName;
+  
+  # For each unique executor, collect its action derivations
+  # This is needed for setupWorkspace({ actionDerivations })
+  executorActionDerivations = lib.listToAttrs (
+    map (executor:
+      let
+        # Find all jobs using this executor (by name)
+        jobsUsingExecutor = lib.filterAttrs (jobName: job: job.executor.name == executor.name) nonEmptyJobs;
+        # Collect all action derivations from those jobs
+        execActionDerivs = lib.unique (lib.flatten (
+          lib.mapAttrsToList (jobName: job:
+            let
+              jobRetry = job.retry or retry;
+              jobTimeout = job.timeout or timeout;
+            in
+              map (toActionDerivation jobRetry jobTimeout) job.actions
+          ) jobsUsingExecutor
+        ));
+      in {
+        name = executor.name;
+        value = execActionDerivs;
+      }
+    ) allExecutors
+  );
   
   # Generate single job bash function
   generateJob = jobName: job:
@@ -165,7 +206,7 @@ let
       
     in ''
       job_${jobName}() {
-        ${executor.setupWorkspace { inherit actionDerivations; }}
+        ${executor.setupJob { inherit jobName actionDerivations; }}
         ${lib.optionalString (normalizedInputs != []) ''
         # Restore artifacts
         _log_job "${jobName}" artifacts "${toString (map (i: i.name) normalizedInputs)}" event "→" "Restoring artifacts"
@@ -193,6 +234,7 @@ let
         '') job.outputs
         )}
         ''}
+        ${executor.cleanupJob { inherit jobName; }}
       }
     '';
 
@@ -215,7 +257,20 @@ in (pkgs.writeScriptBin name ''
   declare -A JOB_STATUS
   FAILED_JOBS=()
   WORKFLOW_CANCELLED=false
-  trap 'WORKFLOW_CANCELLED=true; echo "⊘ Workflow cancelled"; exit 130' SIGINT SIGTERM
+  
+  # Cleanup function for workspaces (includes job status files)
+  cleanup_all() {
+    # Cleanup all executor workspaces (this removes everything including .job-status/)
+    ${lib.concatMapStringsSep "\n" (executor: 
+      executor.cleanupWorkspace { 
+        actionDerivations = executorActionDerivations.${executor.name}; 
+      }
+    ) allExecutors}
+  }
+  
+  # Trap to cleanup on exit (success, error, or signal)
+  trap 'cleanup_all' EXIT
+  trap 'WORKFLOW_CANCELLED=true; echo "⊘ Workflow cancelled"; cleanup_all; exit 130' SIGINT SIGTERM
   
   # ============================================
   # Environment Provider Execution
@@ -290,10 +345,18 @@ in (pkgs.writeScriptBin name ''
   # ============================================
   
   ${lib.concatStringsSep "\n" 
-    (lib.mapAttrsToList generateJob jobs)}
+    (lib.mapAttrsToList generateJob nonEmptyJobs)}
   
   main() {
     _log_workflow levels ${toString (maxDepth + 1)} event "▶" "Workflow starting"
+    
+    # Setup workspaces for all unique executors
+    ${lib.concatMapStringsSep "\n" (executor: 
+      executor.setupWorkspace { 
+        actionDerivations = executorActionDerivations.${executor.name}; 
+      }
+    ) allExecutors}
+    
     ${lib.concatMapStringsSep "\n" (levelIdx:
       let
         level = lib.elemAt levels levelIdx;
@@ -306,7 +369,7 @@ in (pkgs.writeScriptBin name ''
             let
               job = level.${jobName};
               condition = job."if" or "success()";
-              continueOnError = toString (job.continueOnError or false);
+              continueOnError = if (job.continueOnError or false) then "true" else "false";
             in
               ''"${jobName}|${condition}|${continueOnError}"''
           ) levelJobs} || {

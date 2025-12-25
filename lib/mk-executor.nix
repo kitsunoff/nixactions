@@ -3,65 +3,69 @@
 {
   name,
   
-  # Setup workspace for job (lazy-init pattern)
-  # Receives action derivations for this specific job
-  # Returns bash script that creates execution environment if not exists
-  # Note: Expects $WORKFLOW_ID to be set in environment
-  setupWorkspace,  # :: { actionDerivations :: [Derivation] } -> String (bash script)
+  # Repository copying behavior
+  # Default: true - copy $PWD to job directory before executing actions
+  copyRepo ? true,
   
-  # Cleanup workspace at end of workflow
-  # Returns bash script
-  cleanupWorkspace,  # :: String
+  # === WORKSPACE LEVEL (for entire workflow) ===
+  
+  # Setup workspace (called once at workflow start for each unique executor)
+  # Receives all action derivations that will be used by this executor
+  # Should be idempotent (may be called multiple times if same executor used multiple times)
+  # Note: Expects $WORKFLOW_ID to be set in environment
+  setupWorkspace,  # :: { actionDerivations :: [Derivation] } -> String
+  
+  # Cleanup workspace (called once at workflow end via trap EXIT)
+  # Receives all action derivations that were used by this executor
+  # Should cleanup all workspace-level resources
+  cleanupWorkspace,  # :: { actionDerivations :: [Derivation] } -> String
+  
+  # === JOB LEVEL (for each job) ===
+  
+  # Setup job environment (called before executeJob for each job)
+  # Receives action derivations for this specific job
+  # Should create job-specific resources (directories, containers, pods, etc.)
+  setupJob,  # :: { jobName :: String, actionDerivations :: [Derivation] } -> String
   
   # Execute a job within the workspace
   # Receives action derivations and composes them for execution
-  # jobName: name of the job
-  # actionDerivations: list of action derivations to execute
-  # env: job-level environment variables
-  # Returns wrapped bash script
   executeJob,  # :: { jobName :: String, actionDerivations :: [Derivation], env :: AttrSet } -> String
   
-  # Optional: provision derivations to executor environment
-  provision ? null,  # :: [Derivation] -> String
+  # Cleanup job resources (called after executeJob for each job)
+  # Should cleanup job-specific resources (containers, pods, etc.)
+  # Workspace-level resources should NOT be cleaned here (use cleanupWorkspace)
+  cleanupJob,  # :: { jobName :: String } -> String
   
-  # Optional: fetch artifacts from executor to control node
-  # destination: path on control node where to copy artifacts
-  # Returns bash script or null if not supported (e.g., local executor)
-  fetchArtifacts ? null,  # :: { destination :: String } -> String | Null
-  
-  # Optional: push artifacts from control node to executor
-  # source: path on control node where artifacts are stored
-  # Returns bash script or null if not supported (e.g., local executor)
-  pushArtifacts ? null,  # :: { artifacts :: [String], source :: String } -> String | Null
+  # === ARTIFACTS ===
   
   # Save artifact from job directory to HOST artifacts storage
   # Called AFTER executeJob completes (executed on HOST)
-  # name: artifact name
-  # path: relative path in job directory
-  # jobName: job that created it
-  # Returns bash script that saves path to $NIXACTIONS_ARTIFACTS_DIR
   saveArtifact,  # :: { name :: String, path :: String, jobName :: String } -> String
   
   # Restore artifact from HOST storage to job directory
   # Called BEFORE executeJob starts (executed on HOST)
-  # name: artifact name
-  # jobName: job to restore into
-  # Returns bash script that restores from $NIXACTIONS_ARTIFACTS_DIR
-  restoreArtifact,  # :: { name :: String, jobName :: String } -> String
+  restoreArtifact,  # :: { name :: String, path :: String, jobName :: String } -> String
+  
+  # === OPTIONAL (deprecated, may be removed) ===
+  provision ? null,
+  fetchArtifacts ? null,
+  pushArtifacts ? null,
 }:
 
 assert lib.assertMsg (name != "") "Executor name cannot be empty";
 assert lib.assertMsg (builtins.isFunction setupWorkspace) "setupWorkspace must be a function ({ actionDerivations } -> String)";
-assert lib.assertMsg (builtins.isString cleanupWorkspace) "cleanupWorkspace must be a string (bash script)";
+assert lib.assertMsg (builtins.isFunction cleanupWorkspace) "cleanupWorkspace must be a function ({ actionDerivations } -> String)";
+assert lib.assertMsg (builtins.isFunction setupJob) "setupJob must be a function ({ jobName, actionDerivations } -> String)";
 assert lib.assertMsg (builtins.isFunction executeJob) "executeJob must be a function ({ jobName, actionDerivations, env } -> String)";
-assert lib.assertMsg (provision == null || builtins.isFunction provision) "provision must be a function ([Derivation] -> String) or null";
-assert lib.assertMsg (fetchArtifacts == null || builtins.isFunction fetchArtifacts) "fetchArtifacts must be a function ({ artifacts, destination } -> String) or null";
-assert lib.assertMsg (pushArtifacts == null || builtins.isFunction pushArtifacts) "pushArtifacts must be a function ({ artifacts, source } -> String) or null";
+assert lib.assertMsg (builtins.isFunction cleanupJob) "cleanupJob must be a function ({ jobName } -> String)";
 assert lib.assertMsg (builtins.isFunction saveArtifact) "saveArtifact must be a function ({ name, path, jobName } -> String)";
-assert lib.assertMsg (builtins.isFunction restoreArtifact) "restoreArtifact must be a function ({ name, jobName } -> String)";
+assert lib.assertMsg (builtins.isFunction restoreArtifact) "restoreArtifact must be a function ({ name, path, jobName } -> String)";
 
 {
-  inherit name setupWorkspace cleanupWorkspace executeJob provision fetchArtifacts pushArtifacts saveArtifact restoreArtifact;
+  inherit name copyRepo setupWorkspace cleanupWorkspace setupJob executeJob cleanupJob saveArtifact restoreArtifact;
+  
+  # Deprecated/optional
+  inherit provision fetchArtifacts pushArtifacts;
   canProvision = provision != null;
   canFetchArtifacts = fetchArtifacts != null;
   canPushArtifacts = pushArtifacts != null;

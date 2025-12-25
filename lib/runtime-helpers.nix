@@ -86,7 +86,7 @@ pkgs.writeScriptBin "nixactions-runtime" ''
     esac
     
     if [ "$_should_run" = "false" ]; then
-      echo "⊘ Skipping $action_name (condition: $action_condition)"
+      _log job "$job_name" action "$action_name" condition "$action_condition" event "⊘" "Skipped"
       return 0
     fi
     
@@ -237,23 +237,27 @@ pkgs.writeScriptBin "nixactions-runtime" ''
     local condition=''${2:-success()}
     local continue_on_error=''${3:-false}
     
+    # Use workflow-specific dir for inter-process communication (parallel job support)
+    # Store in /tmp/nixactions/{workflow-id}/.job-status/ for consistency
+    local job_status_dir="/tmp/nixactions/$WORKFLOW_ID/.job-status"
+    mkdir -p "$job_status_dir"
+    
     # Check condition
     if ! check_condition "$condition"; then
       _log_job "$job_name" condition "$condition" event "⊘" "Skipped"
-      JOB_STATUS[$job_name]="skipped"
+      echo "skipped" > "$job_status_dir/$job_name.status"
       return 0
     fi
     
     # Execute job in subshell (isolation by design)
     if ( job_$job_name ); then
       _log_job "$job_name" event "✓" "Job succeeded"
-      JOB_STATUS[$job_name]="success"
+      echo "success" > "$job_status_dir/$job_name.status"
       return 0
     else
       local exit_code=$?
       _log_job "$job_name" exit_code $exit_code event "✗" "Job failed"
-      FAILED_JOBS+=("$job_name")
-      JOB_STATUS[$job_name]="failure"
+      echo "failure" > "$job_status_dir/$job_name.status"
       
       if [ "$continue_on_error" = "true" ]; then
         _log_job "$job_name" continue_on_error true event "→" "Continuing despite failure"
@@ -273,35 +277,65 @@ pkgs.writeScriptBin "nixactions-runtime" ''
   run_parallel() {
     local -a job_specs=("$@")
     local -a pids=()
+    local -a job_names=()
+    local -a job_continue_flags=()
     local failed=false
+    local job_status_dir="/tmp/nixactions/$WORKFLOW_ID/.job-status"
     
     # Start all jobs
     for spec in "''${job_specs[@]}"; do
       IFS='|' read -r job_name condition continue_on_error <<< "$spec"
       
-      # Run in background
-      (
-        run_job "$job_name" "$condition" "$continue_on_error"
-      ) &
+      # Store job info for later
+      job_names+=("$job_name")
+      job_continue_flags+=("$continue_on_error")
+      
+      # Run in background WITHOUT subshell to preserve JOB_STATUS updates
+      run_job "$job_name" "$condition" "$continue_on_error" &
       pids+=($!)
     done
     
     # Wait for all jobs
+    local idx=0
     for pid in "''${pids[@]}"; do
       if ! wait "$pid"; then
         failed=true
       fi
+      idx=$((idx + 1))
+    done
+    
+    # Read job statuses from temp files and update global state
+    for job_name in "''${job_names[@]}"; do
+      if [ -f "$job_status_dir/$job_name.status" ]; then
+        local status=$(cat "$job_status_dir/$job_name.status")
+        JOB_STATUS[$job_name]="$status"
+        
+        if [ "$status" = "failure" ]; then
+          FAILED_JOBS+=("$job_name")
+        fi
+      fi
     done
     
     if [ "$failed" = "true" ]; then
-      # Check if we should stop
-      for spec in "''${job_specs[@]}"; do
-        IFS='|' read -r job_name condition continue_on_error <<< "$spec"
+      # Check if ALL failed jobs have continue_on_error=true
+      local should_fail=false
+      
+      idx=0
+      for job_name in "''${job_names[@]}"; do
+        local continue_on_error="''${job_continue_flags[$idx]}"
+        
+        # If this job failed and does NOT have continue_on_error=true, workflow should fail
         if [ "''${JOB_STATUS[$job_name]:-unknown}" = "failure" ] && [ "$continue_on_error" != "true" ]; then
           _log_workflow failed_job "$job_name" event "⊘" "Stopping workflow due to job failure"
-          return 1
+          should_fail=true
         fi
+        
+        idx=$((idx + 1))
       done
+      
+      if [ "$should_fail" = "true" ]; then
+        return 1
+      fi
     fi
     
     return 0
