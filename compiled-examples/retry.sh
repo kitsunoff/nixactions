@@ -7,7 +7,7 @@ export NIXACTIONS_LOG_FORMAT=${NIXACTIONS_LOG_FORMAT:-structured}
 
 source /nix/store/c6a8pgh4xzjl6zc1hglg5l823xfvbdr1-nixactions-logging/bin/nixactions-logging
 source /nix/store/2r76x2y7xbsx2fhfhkxrxszpckydci7y-nixactions-retry/bin/nixactions-retry
-source /nix/store/1mgqdp33xiddrm2va94abw7l8wdvzz0q-nixactions-runtime/bin/nixactions-runtime
+source /nix/store/gnfqpy8dkjijil7y2k7jgx52v7nbc189-nixactions-runtime/bin/nixactions-runtime
 
 NIXACTIONS_ARTIFACTS_DIR="${NIXACTIONS_ARTIFACTS_DIR:-$HOME/.cache/nixactions/$WORKFLOW_ID/artifacts}"
 mkdir -p "$NIXACTIONS_ARTIFACTS_DIR"
@@ -92,6 +92,8 @@ export RETRY_BACKOFF=constant
 export RETRY_MAX_ATTEMPTS=3
 export RETRY_MAX_TIME=3
 export RETRY_MIN_TIME=3
+# Set timeout environment variables
+
 run_action "test-constant" "constant-backoff" "/nix/store/ym9q7pf7576zaz0lb7g43l0x0lsy16cb-constant-backoff/bin/constant-backoff" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 if [ "$ACTION_FAILED" = "true" ]; then
@@ -115,6 +117,8 @@ export RETRY_BACKOFF=exponential
 export RETRY_MAX_ATTEMPTS=3
 export RETRY_MAX_TIME=60
 export RETRY_MIN_TIME=1
+# Set timeout environment variables
+
 run_action "test-exponential" "fail-twice-then-succeed" "/nix/store/307q3sdp3wgw03kp0xd59jyfmc4ch122-fail-twice-then-succeed/bin/fail-twice-then-succeed" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 if [ "$ACTION_FAILED" = "true" ]; then
@@ -138,6 +142,8 @@ export RETRY_BACKOFF=linear
 export RETRY_MAX_ATTEMPTS=3
 export RETRY_MAX_TIME=10
 export RETRY_MIN_TIME=2
+# Set timeout environment variables
+
 run_action "test-linear" "fail-once-with-linear-backoff" "/nix/store/pha8jmrc9wgxdvapizmn89l7da1ngdv6-fail-once-with-linear-backoff/bin/fail-once-with-linear-backoff" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 if [ "$ACTION_FAILED" = "true" ]; then
@@ -157,6 +163,8 @@ ACTION_FAILED=false
 # Set action-level environment variables
 
 # Set retry environment variables
+
+# Set timeout environment variables
 
 run_action "test-max-attempts-one" "single-attempt" "/nix/store/x37s7zmklin84nvcpfb2gykf7fxa4qxi-single-attempt/bin/single-attempt" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
@@ -181,6 +189,8 @@ export RETRY_BACKOFF=exponential
 export RETRY_MAX_ATTEMPTS=2
 export RETRY_MAX_TIME=30
 export RETRY_MIN_TIME=1
+# Set timeout environment variables
+
 run_action "test-no-retry" "no-retry-success" "/nix/store/3326xbx301xida810w0dyifh5rnl8js1-no-retry-success/bin/no-retry-success" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 if [ "$ACTION_FAILED" = "true" ]; then

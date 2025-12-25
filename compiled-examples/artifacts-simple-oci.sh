@@ -7,7 +7,7 @@ export NIXACTIONS_LOG_FORMAT=${NIXACTIONS_LOG_FORMAT:-structured}
 
 source /nix/store/c6a8pgh4xzjl6zc1hglg5l823xfvbdr1-nixactions-logging/bin/nixactions-logging
 source /nix/store/2r76x2y7xbsx2fhfhkxrxszpckydci7y-nixactions-retry/bin/nixactions-retry
-source /nix/store/1mgqdp33xiddrm2va94abw7l8wdvzz0q-nixactions-runtime/bin/nixactions-runtime
+source /nix/store/gnfqpy8dkjijil7y2k7jgx52v7nbc189-nixactions-runtime/bin/nixactions-runtime
 
 NIXACTIONS_ARTIFACTS_DIR="${NIXACTIONS_ARTIFACTS_DIR:-$HOME/.cache/nixactions/$WORKFLOW_ID/artifacts}"
 mkdir -p "$NIXACTIONS_ARTIFACTS_DIR"
@@ -111,6 +111,8 @@ ACTION_FAILED=false
 # Set action-level environment variables
 
 # Set retry environment variables
+
+# Set timeout environment variables
 
 run_action "build" "build" "/nix/store/smlr0xn0d4i7qjgvz4l4k28psbmmjy6j-build/bin/build" '\''success()'\'' '\''date +%s%N 2>/dev/null || date +%s'\''
 
@@ -292,6 +294,8 @@ ACTION_FAILED=false
 # Set action-level environment variables
 
 # Set retry environment variables
+
+# Set timeout environment variables
 
 run_action "test" "test" "/nix/store/f7n2nj35lcgfp9wnsc77ykk5mg31br3g-test/bin/test" '\''success()'\'' '\''date +%s%N 2>/dev/null || date +%s'\''
 

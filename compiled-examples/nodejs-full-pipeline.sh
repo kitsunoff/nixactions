@@ -7,7 +7,7 @@ export NIXACTIONS_LOG_FORMAT=${NIXACTIONS_LOG_FORMAT:-structured}
 
 source /nix/store/c6a8pgh4xzjl6zc1hglg5l823xfvbdr1-nixactions-logging/bin/nixactions-logging
 source /nix/store/2r76x2y7xbsx2fhfhkxrxszpckydci7y-nixactions-retry/bin/nixactions-retry
-source /nix/store/1mgqdp33xiddrm2va94abw7l8wdvzz0q-nixactions-runtime/bin/nixactions-runtime
+source /nix/store/gnfqpy8dkjijil7y2k7jgx52v7nbc189-nixactions-runtime/bin/nixactions-runtime
 
 NIXACTIONS_ARTIFACTS_DIR="${NIXACTIONS_ARTIFACTS_DIR:-$HOME/.cache/nixactions/$WORKFLOW_ID/artifacts}"
 mkdir -p "$NIXACTIONS_ARTIFACTS_DIR"
@@ -111,11 +111,15 @@ ACTION_FAILED=false
 
 # Set retry environment variables
 
+# Set timeout environment variables
+
 run_action "build" "install-deps" "/nix/store/b7p589g11cl0lm462i9w12bg62p7j2fm-install-deps/bin/install-deps" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 # Set action-level environment variables
 
 # Set retry environment variables
+
+# Set timeout environment variables
 
 run_action "build" "build" "/nix/store/1lzkms1zgvxrgv0kz81xlv9kgkzhw5yi-build/bin/build" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
@@ -158,6 +162,8 @@ ACTION_FAILED=false
 
 # Set retry environment variables
 
+# Set timeout environment variables
+
 run_action "deploy-production" "deploy-production" "/nix/store/d482fpy653sh7mg6i8gn2kdkjgiq4w4p-deploy-production/bin/deploy-production" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 if [ "$ACTION_FAILED" = "true" ]; then
@@ -192,6 +198,8 @@ ACTION_FAILED=false
 
 # Set retry environment variables
 
+# Set timeout environment variables
+
 run_action "deploy-staging" "deploy-staging" "/nix/store/y95mlspbvwr3vvk089gr1xj5n7b3340l-deploy-staging/bin/deploy-staging" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 if [ "$ACTION_FAILED" = "true" ]; then
@@ -220,11 +228,15 @@ ACTION_FAILED=false
 
 # Set retry environment variables
 
+# Set timeout environment variables
+
 run_action "lint" "install-deps" "/nix/store/b7p589g11cl0lm462i9w12bg62p7j2fm-install-deps/bin/install-deps" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 # Set action-level environment variables
 
 # Set retry environment variables
+
+# Set timeout environment variables
 
 run_action "lint" "install-deps" "/nix/store/b7p589g11cl0lm462i9w12bg62p7j2fm-install-deps/bin/install-deps" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
@@ -254,6 +266,8 @@ ACTION_FAILED=false
 
 # Set retry environment variables
 
+# Set timeout environment variables
+
 run_action "notify-failure" "notify" "/nix/store/sjxj2zcjkigwwljlzmmjjka62iw17xwk-notify/bin/notify" 'always()' 'date +%s%N 2>/dev/null || echo "0"'
 
 if [ "$ACTION_FAILED" = "true" ]; then
@@ -281,6 +295,8 @@ ACTION_FAILED=false
 # Set action-level environment variables
 
 # Set retry environment variables
+
+# Set timeout environment variables
 
 run_action "notify-success" "notify" "/nix/store/yaigzkf5008kpcywk1wkhvr01par0mhd-notify/bin/notify" 'always()' 'date +%s%N 2>/dev/null || echo "0"'
 
@@ -310,6 +326,8 @@ ACTION_FAILED=false
 
 # Set retry environment variables
 
+# Set timeout environment variables
+
 run_action "test" "install-deps" "/nix/store/b7p589g11cl0lm462i9w12bg62p7j2fm-install-deps/bin/install-deps" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 # Set action-level environment variables
@@ -319,6 +337,8 @@ export RETRY_BACKOFF=exponential
 export RETRY_MAX_ATTEMPTS=3
 export RETRY_MAX_TIME=10
 export RETRY_MIN_TIME=1
+# Set timeout environment variables
+
 run_action "test" "unit-tests" "/nix/store/15gla5nvmnzh7a8mvlhhlpn6m0v02z3d-unit-tests/bin/unit-tests" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 if [ "$ACTION_FAILED" = "true" ]; then
@@ -354,11 +374,15 @@ ACTION_FAILED=false
 
 # Set retry environment variables
 
+# Set timeout environment variables
+
 run_action "typecheck" "install-deps" "/nix/store/b7p589g11cl0lm462i9w12bg62p7j2fm-install-deps/bin/install-deps" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 # Set action-level environment variables
 
 # Set retry environment variables
+
+# Set timeout environment variables
 
 run_action "typecheck" "typescript" "/nix/store/142rs20y2dpya57f56mdix3mcz32sw5p-typescript/bin/typescript" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 

@@ -7,7 +7,7 @@ export NIXACTIONS_LOG_FORMAT=${NIXACTIONS_LOG_FORMAT:-structured}
 
 source /nix/store/c6a8pgh4xzjl6zc1hglg5l823xfvbdr1-nixactions-logging/bin/nixactions-logging
 source /nix/store/2r76x2y7xbsx2fhfhkxrxszpckydci7y-nixactions-retry/bin/nixactions-retry
-source /nix/store/1mgqdp33xiddrm2va94abw7l8wdvzz0q-nixactions-runtime/bin/nixactions-runtime
+source /nix/store/gnfqpy8dkjijil7y2k7jgx52v7nbc189-nixactions-runtime/bin/nixactions-runtime
 
 NIXACTIONS_ARTIFACTS_DIR="${NIXACTIONS_ARTIFACTS_DIR:-$HOME/.cache/nixactions/$WORKFLOW_ID/artifacts}"
 mkdir -p "$NIXACTIONS_ARTIFACTS_DIR"
@@ -89,6 +89,8 @@ ACTION_FAILED=false
 
 # Set retry environment variables
 
+# Set timeout environment variables
+
 run_action "build-local" "build-local" "/nix/store/sypx4ppawkli395nzi7w7p724sq1zsnd-build-local/bin/build-local" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 if [ "$ACTION_FAILED" = "true" ]; then
@@ -138,6 +140,8 @@ ACTION_FAILED=false
 # Set action-level environment variables
 
 # Set retry environment variables
+
+# Set timeout environment variables
 
 run_action "build-oci" "build-oci" "/nix/store/2mzh06a098zmj6cd974zgk82c0pbvkxl-build-oci/bin/build-oci" '\''success()'\'' '\''date +%s%N 2>/dev/null || date +%s'\''
 
@@ -202,6 +206,8 @@ ACTION_FAILED=false
 # Set action-level environment variables
 
 # Set retry environment variables
+
+# Set timeout environment variables
 
 run_action "compare" "compare-builds" "/nix/store/4s6pz0zqsh740jclz4sz4kj0qn29axgc-compare-builds/bin/compare-builds" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 

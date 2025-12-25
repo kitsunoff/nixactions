@@ -7,7 +7,7 @@ export NIXACTIONS_LOG_FORMAT=${NIXACTIONS_LOG_FORMAT:-structured}
 
 source /nix/store/c6a8pgh4xzjl6zc1hglg5l823xfvbdr1-nixactions-logging/bin/nixactions-logging
 source /nix/store/2r76x2y7xbsx2fhfhkxrxszpckydci7y-nixactions-retry/bin/nixactions-retry
-source /nix/store/1mgqdp33xiddrm2va94abw7l8wdvzz0q-nixactions-runtime/bin/nixactions-runtime
+source /nix/store/gnfqpy8dkjijil7y2k7jgx52v7nbc189-nixactions-runtime/bin/nixactions-runtime
 
 NIXACTIONS_ARTIFACTS_DIR="${NIXACTIONS_ARTIFACTS_DIR:-$HOME/.cache/nixactions/$WORKFLOW_ID/artifacts}"
 mkdir -p "$NIXACTIONS_ARTIFACTS_DIR"
@@ -84,7 +84,7 @@ job_build() {
 if [ -z "${CONTAINER_ID_OCI_alpine_build:-}" ]; then
   # Load custom image
   echo "→ Loading custom OCI image with actions (this may take a while)..."
-  /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker load < /nix/store/an6232flpdc83gzy8sw85rbbpqi9jyq9-nixactions-alpine.tar.gz
+  /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker load < /nix/store/90zsrgv4a8k1n0b8kpslzd7gjmdslzsm-nixactions-alpine.tar.gz
   
   # Create and start container from custom image
   CONTAINER_ID_OCI_alpine_build=$(/nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker create \
@@ -128,6 +128,8 @@ ACTION_FAILED=false
 # Set action-level environment variables
 
 # Set retry environment variables
+
+# Set timeout environment variables
 
 run_action "build" "build" "/nix/store/rs7map7s1lxr87cz6shw80lbzipq4l9l-build/bin/build" '\''success()'\'' '\''date +%s%N 2>/dev/null || date +%s'\''
 
@@ -208,7 +210,7 @@ job_test() {
 if [ -z "${CONTAINER_ID_OCI_alpine_build:-}" ]; then
   # Load custom image
   echo "→ Loading custom OCI image with actions (this may take a while)..."
-  /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker load < /nix/store/xg8c9v77gsajb45i1vlckz6ycqzzpn06-nixactions-alpine.tar.gz
+  /nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker load < /nix/store/np6imxh1qsw3vpki0wl6vzb14pjzyjji-nixactions-alpine.tar.gz
   
   # Create and start container from custom image
   CONTAINER_ID_OCI_alpine_build=$(/nix/store/38qw6ldsflj4jzvvfm2q7f4i7x1m79n7-docker-29.1.2/bin/docker create \
@@ -326,6 +328,8 @@ ACTION_FAILED=false
 # Set action-level environment variables
 
 # Set retry environment variables
+
+# Set timeout environment variables
 
 run_action "test" "test" "/nix/store/kqnml247dqq3967m97c1fyxvk9qpszhw-test/bin/test" '\''success()'\'' '\''date +%s%N 2>/dev/null || date +%s'\''
 

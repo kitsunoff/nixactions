@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-WORKFLOW_ID="secrets-workflow-$(date +%s)-$$"
-export WORKFLOW_ID WORKFLOW_NAME="secrets-workflow"
+WORKFLOW_ID="test-timeout-$(date +%s)-$$"
+export WORKFLOW_ID WORKFLOW_NAME="test-timeout"
 export NIXACTIONS_LOG_FORMAT=${NIXACTIONS_LOG_FORMAT:-structured}
 
 source /nix/store/c6a8pgh4xzjl6zc1hglg5l823xfvbdr1-nixactions-logging/bin/nixactions-logging
@@ -72,183 +72,141 @@ run_provider() {
 
 
 # Apply workflow-level env (hardcoded, lowest priority)
-if [ -z "${APP_NAME+x}" ]; then
-  export APP_NAME=nixactions-demo
-fi
-if [ -z "${ENVIRONMENT+x}" ]; then
-  export ENVIRONMENT=staging
-fi
+
 
 # ============================================
 # Job Functions
 # ============================================
 
-job_deploy-with-secrets() {
+job_test-fast-action() {
       source /nix/store/gjwg64hal8wgjdz7mmhgdyq4c7qbqpfr-nixactions-local-executor/bin/nixactions-local-executor
 setup_local_workspace
   
-      setup_local_job "deploy-with-secrets"
-if [ -z "${APP_NAME+x}" ]; then
-  export APP_NAME=nixactions-demo
-fi
-if [ -z "${DEPLOY_TARGET+x}" ]; then
-  export DEPLOY_TARGET=staging-cluster
-fi
-if [ -z "${ENVIRONMENT+x}" ]; then
-  export ENVIRONMENT=staging
-fi
+      setup_local_job "test-fast-action"
+
 ACTION_FAILED=false
 # Set action-level environment variables
 
 # Set retry environment variables
 
 # Set timeout environment variables
-
-run_action "deploy-with-secrets" "simulate-deployment" "/nix/store/28dj7grrqaha34ix9534d9kkrg69w42w-simulate-deployment/bin/simulate-deployment" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
+export NIXACTIONS_TIMEOUT=5s
+run_action "test-fast-action" "fast-action" "/nix/store/difyzmccpdyqrzsh0gcq3kphr7wwy5ln-fast-action/bin/fast-action" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 if [ "$ACTION_FAILED" = "true" ]; then
-  _log_job "deploy-with-secrets" event "✗" "Job failed due to action failures"
+  _log_job "test-fast-action" event "✗" "Job failed due to action failures"
   exit 1
 fi
   
 }
 
-job_override-env() {
+job_test-job-timeout() {
       source /nix/store/gjwg64hal8wgjdz7mmhgdyq4c7qbqpfr-nixactions-local-executor/bin/nixactions-local-executor
 setup_local_workspace
   
-      setup_local_job "override-env"
-if [ -z "${APP_NAME+x}" ]; then
-  export APP_NAME=nixactions-demo
-fi
-if [ -z "${ENVIRONMENT+x}" ]; then
-  export ENVIRONMENT=staging
-fi
-if [ -z "${LOG_LEVEL+x}" ]; then
-  export LOG_LEVEL=info
-fi
+      setup_local_job "test-job-timeout"
+
 ACTION_FAILED=false
 # Set action-level environment variables
 
 # Set retry environment variables
 
 # Set timeout environment variables
-
-run_action "override-env" "default-log-level" "/nix/store/71r1zigsvky6vddvj9k1fyj63pgha6iz-default-log-level/bin/default-log-level" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
-
-# Set action-level environment variables
-export LOG_LEVEL=debug
-# Set retry environment variables
-
-# Set timeout environment variables
-
-run_action "override-env" "override-log-level" "/nix/store/g0ffhn80vpq0b0rlsldqkfg3r3vs9vj4-override-log-level/bin/override-log-level" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
-
-# Set action-level environment variables
-
-# Set retry environment variables
-
-# Set timeout environment variables
-
-run_action "override-env" "back-to-default" "/nix/store/sh5fj2cv3j40lm3lmhxbkwzagx2qf1dz-back-to-default/bin/back-to-default" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
+export NIXACTIONS_TIMEOUT=5s
+run_action "test-job-timeout" "quick-task" "/nix/store/kpb74p876nm8390hrlxw8qi1n7i3m4af-quick-task/bin/quick-task" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 if [ "$ACTION_FAILED" = "true" ]; then
-  _log_job "override-env" event "✗" "Job failed due to action failures"
+  _log_job "test-job-timeout" event "✗" "Job failed due to action failures"
   exit 1
 fi
   
 }
 
-job_report() {
+job_test-no-timeout() {
       source /nix/store/gjwg64hal8wgjdz7mmhgdyq4c7qbqpfr-nixactions-local-executor/bin/nixactions-local-executor
 setup_local_workspace
   
-      setup_local_job "report"
-if [ -z "${APP_NAME+x}" ]; then
-  export APP_NAME=nixactions-demo
-fi
-if [ -z "${ENVIRONMENT+x}" ]; then
-  export ENVIRONMENT=staging
-fi
+      setup_local_job "test-no-timeout"
+
 ACTION_FAILED=false
 # Set action-level environment variables
 
 # Set retry environment variables
 
 # Set timeout environment variables
-
-run_action "report" "secrets-demo-report" "/nix/store/zbgfz2cqpd8q1s7h3hl91lfkdgp25fhk-secrets-demo-report/bin/secrets-demo-report" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
+export NIXACTIONS_TIMEOUT=30s
+run_action "test-no-timeout" "no-timeout-action" "/nix/store/sajs99l0qx4ywd3d2ssnpb96lxvad3gn-no-timeout-action/bin/no-timeout-action" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 if [ "$ACTION_FAILED" = "true" ]; then
-  _log_job "report" event "✗" "Job failed due to action failures"
+  _log_job "test-no-timeout" event "✗" "Job failed due to action failures"
   exit 1
 fi
   
 }
 
-job_use-runtime-env() {
+job_test-timeout-action() {
       source /nix/store/gjwg64hal8wgjdz7mmhgdyq4c7qbqpfr-nixactions-local-executor/bin/nixactions-local-executor
 setup_local_workspace
   
-      setup_local_job "use-runtime-env"
-if [ -z "${APP_NAME+x}" ]; then
-  export APP_NAME=nixactions-demo
-fi
-if [ -z "${ENVIRONMENT+x}" ]; then
-  export ENVIRONMENT=staging
-fi
+      setup_local_job "test-timeout-action"
+
 ACTION_FAILED=false
 # Set action-level environment variables
 
 # Set retry environment variables
 
 # Set timeout environment variables
+export NIXACTIONS_TIMEOUT=2s
+run_action "test-timeout-action" "slow-action" "/nix/store/rlj75vk7rd139n9zhgsfdj82nkgvqvkz-slow-action/bin/slow-action" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
-run_action "use-runtime-env" "check-optional-secrets" "/nix/store/bihb30j9hshmisrcjg05zd1c0lvy7al5-check-optional-secrets/bin/check-optional-secrets" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
+# Set action-level environment variables
+
+# Set retry environment variables
+
+# Set timeout environment variables
+export NIXACTIONS_TIMEOUT=30s
+run_action "test-timeout-action" "verify-timeout" "/nix/store/1ppgwswz480pv20hk906dvzdwp5x1jwm-verify-timeout/bin/verify-timeout" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 if [ "$ACTION_FAILED" = "true" ]; then
-  _log_job "use-runtime-env" event "✗" "Job failed due to action failures"
+  _log_job "test-timeout-action" event "✗" "Job failed due to action failures"
   exit 1
 fi
   
 }
 
-job_validate-env() {
+job_test-timeout-formats() {
       source /nix/store/gjwg64hal8wgjdz7mmhgdyq4c7qbqpfr-nixactions-local-executor/bin/nixactions-local-executor
 setup_local_workspace
   
-      setup_local_job "validate-env"
-if [ -z "${APP_NAME+x}" ]; then
-  export APP_NAME=nixactions-demo
-fi
-if [ -z "${DATABASE_HOST+x}" ]; then
-  export DATABASE_HOST=localhost
-fi
-if [ -z "${DATABASE_PORT+x}" ]; then
-  export DATABASE_PORT=5432
-fi
-if [ -z "${ENVIRONMENT+x}" ]; then
-  export ENVIRONMENT=staging
-fi
+      setup_local_job "test-timeout-formats"
+
 ACTION_FAILED=false
 # Set action-level environment variables
 
 # Set retry environment variables
 
 # Set timeout environment variables
-
-run_action "validate-env" "require-env" "/nix/store/mjm37dq9dc7y1g82lr42pjq8y676gmdd-require-env/bin/require-env" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
+export NIXACTIONS_TIMEOUT=3s
+run_action "test-timeout-formats" "test-seconds" "/nix/store/sm9s1x9gq2n2blig68a86dj6ybi9ihs5-test-seconds/bin/test-seconds" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 # Set action-level environment variables
 
 # Set retry environment variables
 
 # Set timeout environment variables
+export NIXACTIONS_TIMEOUT=1m
+run_action "test-timeout-formats" "test-minutes" "/nix/store/jf5vspnbdr6j98nr1ak12qb657za6y6c-test-minutes/bin/test-minutes" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
-run_action "validate-env" "show-config" "/nix/store/9y4lixxlnx47bdyy3m4sg6w4bgn9pc4p-show-config/bin/show-config" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
+# Set action-level environment variables
+
+# Set retry environment variables
+
+# Set timeout environment variables
+export NIXACTIONS_TIMEOUT=1h
+run_action "test-timeout-formats" "test-hours" "/nix/store/33qlc3nim9g58k90qn8b89scqkwzcgzq-test-hours/bin/test-hours" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 if [ "$ACTION_FAILED" = "true" ]; then
-  _log_job "validate-env" event "✗" "Job failed due to action failures"
+  _log_job "test-timeout-formats" event "✗" "Job failed due to action failures"
   exit 1
 fi
   
@@ -257,32 +215,32 @@ fi
 
 main() {
   _log_workflow levels 5 event "▶" "Workflow starting"
-  _log_workflow level 0 jobs "validate-env" event "→" "Starting level"
-run_parallel "validate-env|success()|" || {
+  _log_workflow level 0 jobs "test-fast-action" event "→" "Starting level"
+run_parallel "test-fast-action|success()|" || {
   _log_workflow level 0 event "✗" "Level failed"
   exit 1
 }
 
-_log_workflow level 1 jobs "use-runtime-env" event "→" "Starting level"
-run_parallel "use-runtime-env|success()|" || {
+_log_workflow level 1 jobs "test-timeout-action" event "→" "Starting level"
+run_parallel "test-timeout-action|success()|1" || {
   _log_workflow level 1 event "✗" "Level failed"
   exit 1
 }
 
-_log_workflow level 2 jobs "override-env" event "→" "Starting level"
-run_parallel "override-env|success()|" || {
+_log_workflow level 2 jobs "test-job-timeout" event "→" "Starting level"
+run_parallel "test-job-timeout|success()|" || {
   _log_workflow level 2 event "✗" "Level failed"
   exit 1
 }
 
-_log_workflow level 3 jobs "deploy-with-secrets" event "→" "Starting level"
-run_parallel "deploy-with-secrets|success()|" || {
+_log_workflow level 3 jobs "test-no-timeout" event "→" "Starting level"
+run_parallel "test-no-timeout|success()|" || {
   _log_workflow level 3 event "✗" "Level failed"
   exit 1
 }
 
-_log_workflow level 4 jobs "report" event "→" "Starting level"
-run_parallel "report|always()|" || {
+_log_workflow level 4 jobs "test-timeout-formats" event "→" "Starting level"
+run_parallel "test-timeout-formats|success()|" || {
   _log_workflow level 4 event "✗" "Level failed"
   exit 1
 }

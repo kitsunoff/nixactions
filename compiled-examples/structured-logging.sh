@@ -7,7 +7,7 @@ export NIXACTIONS_LOG_FORMAT=${NIXACTIONS_LOG_FORMAT:-structured}
 
 source /nix/store/c6a8pgh4xzjl6zc1hglg5l823xfvbdr1-nixactions-logging/bin/nixactions-logging
 source /nix/store/2r76x2y7xbsx2fhfhkxrxszpckydci7y-nixactions-retry/bin/nixactions-retry
-source /nix/store/1mgqdp33xiddrm2va94abw7l8wdvzz0q-nixactions-runtime/bin/nixactions-runtime
+source /nix/store/gnfqpy8dkjijil7y2k7jgx52v7nbc189-nixactions-runtime/bin/nixactions-runtime
 
 NIXACTIONS_ARTIFACTS_DIR="${NIXACTIONS_ARTIFACTS_DIR:-$HOME/.cache/nixactions/$WORKFLOW_ID/artifacts}"
 mkdir -p "$NIXACTIONS_ARTIFACTS_DIR"
@@ -89,17 +89,23 @@ ACTION_FAILED=false
 
 # Set retry environment variables
 
+# Set timeout environment variables
+
 run_action "test" "checkout" "/nix/store/x1czsqjbai4v3z334gay6yyphh75azam-checkout/bin/checkout" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 # Set action-level environment variables
 
 # Set retry environment variables
 
+# Set timeout environment variables
+
 run_action "test" "install-deps" "/nix/store/14yy2w68r7zxndwm2idmz3isrji6b7ns-install-deps/bin/install-deps" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 # Set action-level environment variables
 
 # Set retry environment variables
+
+# Set timeout environment variables
 
 run_action "test" "run-tests" "/nix/store/r815a24d7biiw9xxg7l3r65175pdr9c6-run-tests/bin/run-tests" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 

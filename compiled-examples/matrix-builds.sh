@@ -7,7 +7,7 @@ export NIXACTIONS_LOG_FORMAT=${NIXACTIONS_LOG_FORMAT:-structured}
 
 source /nix/store/c6a8pgh4xzjl6zc1hglg5l823xfvbdr1-nixactions-logging/bin/nixactions-logging
 source /nix/store/2r76x2y7xbsx2fhfhkxrxszpckydci7y-nixactions-retry/bin/nixactions-retry
-source /nix/store/1mgqdp33xiddrm2va94abw7l8wdvzz0q-nixactions-runtime/bin/nixactions-runtime
+source /nix/store/gnfqpy8dkjijil7y2k7jgx52v7nbc189-nixactions-runtime/bin/nixactions-runtime
 
 NIXACTIONS_ARTIFACTS_DIR="${NIXACTIONS_ARTIFACTS_DIR:-$HOME/.cache/nixactions/$WORKFLOW_ID/artifacts}"
 mkdir -p "$NIXACTIONS_ARTIFACTS_DIR"
@@ -89,6 +89,8 @@ ACTION_FAILED=false
 
 # Set retry environment variables
 
+# Set timeout environment variables
+
 run_action "build-arch-amd64-distro-alpine" "build-amd64-alpine" "/nix/store/2jgsp5clyd48x8a2zn9g8v6kmvldy9dg-build-amd64-alpine/bin/build-amd64-alpine" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 if [ "$ACTION_FAILED" = "true" ]; then
@@ -115,6 +117,8 @@ ACTION_FAILED=false
 # Set action-level environment variables
 
 # Set retry environment variables
+
+# Set timeout environment variables
 
 run_action "build-arch-amd64-distro-debian" "build-amd64-debian" "/nix/store/xlghvqkarksv1irl28s80s5lzarl7p0n-build-amd64-debian/bin/build-amd64-debian" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
@@ -143,6 +147,8 @@ ACTION_FAILED=false
 
 # Set retry environment variables
 
+# Set timeout environment variables
+
 run_action "build-arch-arm64-distro-alpine" "build-arm64-alpine" "/nix/store/3cym7l7flcccab6g86cg2k43v7z5y3da-build-arm64-alpine/bin/build-arm64-alpine" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 if [ "$ACTION_FAILED" = "true" ]; then
@@ -169,6 +175,8 @@ ACTION_FAILED=false
 # Set action-level environment variables
 
 # Set retry environment variables
+
+# Set timeout environment variables
 
 run_action "build-arch-arm64-distro-debian" "build-arm64-debian" "/nix/store/cvcc0c2ck9d0cvl3infz9j7agjz3m5yl-build-arm64-debian/bin/build-arm64-debian" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
@@ -215,6 +223,8 @@ ACTION_FAILED=false
 
 # Set retry environment variables
 
+# Set timeout environment variables
+
 run_action "deploy" "deploy-all-builds" "/nix/store/9qqxcncgzyslwl60pl75j15bs7b3wiba-deploy-all-builds/bin/deploy-all-builds" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 if [ "$ACTION_FAILED" = "true" ]; then
@@ -234,6 +244,8 @@ ACTION_FAILED=false
 # Set action-level environment variables
 
 # Set retry environment variables
+
+# Set timeout environment variables
 
 run_action "summary" "workflow-summary" "/nix/store/5dkqq35g3wbavyc1im3c5gs8irvr6wx1-workflow-summary/bin/workflow-summary" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
@@ -277,6 +289,8 @@ ACTION_FAILED=false
 # Set action-level environment variables
 
 # Set retry environment variables
+
+# Set timeout environment variables
 
 run_action "test-node-18-os-alpine" "test-node-18-on-alpine" "/nix/store/1y76dwqd7p2izcwaiaw8lzb8hpknf297-test-node-18-on-alpine/bin/test-node-18-on-alpine" '\''success()'\'' '\''date +%s%N 2>/dev/null || date +%s'\''
 
@@ -323,6 +337,8 @@ ACTION_FAILED=false
 
 # Set retry environment variables
 
+# Set timeout environment variables
+
 run_action "test-node-18-os-ubuntu" "test-node-18-on-ubuntu" "/nix/store/jcwns5c2wlibcajs2cdb0sys0yjkqmg1-test-node-18-on-ubuntu/bin/test-node-18-on-ubuntu" '\''success()'\'' '\''date +%s%N 2>/dev/null || date +%s'\''
 
 if [ "$ACTION_FAILED" = "true" ]; then
@@ -367,6 +383,8 @@ ACTION_FAILED=false
 # Set action-level environment variables
 
 # Set retry environment variables
+
+# Set timeout environment variables
 
 run_action "test-node-20-os-alpine" "test-node-20-on-alpine" "/nix/store/061g36ccgy8l4fiwwn75pcya300ljcmm-test-node-20-on-alpine/bin/test-node-20-on-alpine" '\''success()'\'' '\''date +%s%N 2>/dev/null || date +%s'\''
 
@@ -413,6 +431,8 @@ ACTION_FAILED=false
 
 # Set retry environment variables
 
+# Set timeout environment variables
+
 run_action "test-node-20-os-ubuntu" "test-node-20-on-ubuntu" "/nix/store/hnfzsrly68lz2afr4i5lfb4nmsqbvixz-test-node-20-on-ubuntu/bin/test-node-20-on-ubuntu" '\''success()'\'' '\''date +%s%N 2>/dev/null || date +%s'\''
 
 if [ "$ACTION_FAILED" = "true" ]; then
@@ -458,6 +478,8 @@ ACTION_FAILED=false
 
 # Set retry environment variables
 
+# Set timeout environment variables
+
 run_action "test-node-22-os-alpine" "test-node-22-on-alpine" "/nix/store/jq4gc2ghwpp0s1zvyyggcb4xyqjhnjb4-test-node-22-on-alpine/bin/test-node-22-on-alpine" '\''success()'\'' '\''date +%s%N 2>/dev/null || date +%s'\''
 
 if [ "$ACTION_FAILED" = "true" ]; then
@@ -502,6 +524,8 @@ ACTION_FAILED=false
 # Set action-level environment variables
 
 # Set retry environment variables
+
+# Set timeout environment variables
 
 run_action "test-node-22-os-ubuntu" "test-node-22-on-ubuntu" "/nix/store/hclmkgwxx7vjy7p17caq8w181zw4sg1y-test-node-22-on-ubuntu/bin/test-node-22-on-ubuntu" '\''success()'\'' '\''date +%s%N 2>/dev/null || date +%s'\''
 

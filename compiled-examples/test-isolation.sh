@@ -7,7 +7,7 @@ export NIXACTIONS_LOG_FORMAT=${NIXACTIONS_LOG_FORMAT:-structured}
 
 source /nix/store/c6a8pgh4xzjl6zc1hglg5l823xfvbdr1-nixactions-logging/bin/nixactions-logging
 source /nix/store/2r76x2y7xbsx2fhfhkxrxszpckydci7y-nixactions-retry/bin/nixactions-retry
-source /nix/store/1mgqdp33xiddrm2va94abw7l8wdvzz0q-nixactions-runtime/bin/nixactions-runtime
+source /nix/store/gnfqpy8dkjijil7y2k7jgx52v7nbc189-nixactions-runtime/bin/nixactions-runtime
 
 NIXACTIONS_ARTIFACTS_DIR="${NIXACTIONS_ARTIFACTS_DIR:-$HOME/.cache/nixactions/$WORKFLOW_ID/artifacts}"
 mkdir -p "$NIXACTIONS_ARTIFACTS_DIR"
@@ -96,11 +96,15 @@ ACTION_FAILED=false
 
 # Set retry environment variables
 
+# Set timeout environment variables
+
 run_action "job1" "show-job1-env" "/nix/store/fwn37aw66z7298lj3q1svcwb8kqh4qyr-show-job1-env/bin/show-job1-env" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 # Set action-level environment variables
 
 # Set retry environment variables
+
+# Set timeout environment variables
 
 run_action "job1" "try-to-leak" "/nix/store/walpcavxidfgjrq86hwzqzqabd7ajg87-try-to-leak/bin/try-to-leak" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
@@ -126,6 +130,8 @@ ACTION_FAILED=false
 # Set action-level environment variables
 
 # Set retry environment variables
+
+# Set timeout environment variables
 
 run_action "job2" "show-job2-env" "/nix/store/cqhb6aa3nqd4f5hn8ck83xl94zbrk2cv-show-job2-env/bin/show-job2-env" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 

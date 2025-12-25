@@ -7,7 +7,7 @@ export NIXACTIONS_LOG_FORMAT=${NIXACTIONS_LOG_FORMAT:-structured}
 
 source /nix/store/c6a8pgh4xzjl6zc1hglg5l823xfvbdr1-nixactions-logging/bin/nixactions-logging
 source /nix/store/2r76x2y7xbsx2fhfhkxrxszpckydci7y-nixactions-retry/bin/nixactions-retry
-source /nix/store/1mgqdp33xiddrm2va94abw7l8wdvzz0q-nixactions-runtime/bin/nixactions-runtime
+source /nix/store/gnfqpy8dkjijil7y2k7jgx52v7nbc189-nixactions-runtime/bin/nixactions-runtime
 
 NIXACTIONS_ARTIFACTS_DIR="${NIXACTIONS_ARTIFACTS_DIR:-$HOME/.cache/nixactions/$WORKFLOW_ID/artifacts}"
 mkdir -p "$NIXACTIONS_ARTIFACTS_DIR"
@@ -89,17 +89,23 @@ ACTION_FAILED=false
 
 # Set retry environment variables
 
+# Set timeout environment variables
+
 run_action "build" "generate-version" "/nix/store/15pd9x4513h8yz79b6n7gd27r0bq03q0-generate-version/bin/generate-version" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 # Set action-level environment variables
 
 # Set retry environment variables
 
+# Set timeout environment variables
+
 run_action "build" "build-app" "/nix/store/6rc61imrlc6jdlgb7wn4p4dbdq47dlrm-build-app/bin/build-app" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 # Set action-level environment variables
 
 # Set retry environment variables
+
+# Set timeout environment variables
 
 run_action "build" "verify-build" "/nix/store/h8sjcdkh8f38r4m070gfsrpzsmv05yx3-verify-build/bin/verify-build" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
@@ -134,11 +140,15 @@ ACTION_FAILED=false
 
 # Set retry environment variables
 
+# Set timeout environment variables
+
 run_action "calculate" "multi-step-calculation" "/nix/store/i96xrfp07fkjlhr0ir3yz31s8y8m1iff-multi-step-calculation/bin/multi-step-calculation" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 # Set action-level environment variables
 
 # Set retry environment variables
+
+# Set timeout environment variables
 
 run_action "calculate" "use-calculations" "/nix/store/99kpksdaqqf7252srib1pjnay9cjcwvz-use-calculations/bin/use-calculations" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
@@ -159,6 +169,8 @@ ACTION_FAILED=false
 # Set action-level environment variables
 
 # Set retry environment variables
+
+# Set timeout environment variables
 
 run_action "summary" "summary" "/nix/store/nc3zk8nfwyh4sgdr5714c8n46kvra9k3-summary/bin/summary" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
@@ -186,11 +198,15 @@ ACTION_FAILED=false
 
 # Set retry environment variables
 
+# Set timeout environment variables
+
 run_action "test-advanced" "parse-build-info" "/nix/store/bp8gcmbhyvh7pg16m42f94m2xpbi21vq-parse-build-info/bin/parse-build-info" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
 # Set action-level environment variables
 
 # Set retry environment variables
+
+# Set timeout environment variables
 
 run_action "test-advanced" "use-parsed-version" "/nix/store/idfgnvnb6flyz1pprp1n6arbc9492hcr-use-parsed-version/bin/use-parsed-version" 'success()' 'date +%s%N 2>/dev/null || echo "0"'
 
