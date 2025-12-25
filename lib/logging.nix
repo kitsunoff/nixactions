@@ -49,25 +49,6 @@ rec {
         else
           echo "$message" >&2
         fi
-      elif [ "$NIXACTIONS_LOG_FORMAT" = "json" ]; then
-        # JSON format
-        local json="{\"timestamp\":\"$(_log_timestamp)\",\"workflow\":\"$WORKFLOW_NAME\""
-        
-        # Add all fields
-        for key in "''${!fields[@]}"; do
-          local value="''${fields[$key]}"
-          # Check if value is a number
-          if [[ "$value" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
-            json="$json,\"$key\":$value"
-          else
-            # Escape quotes for JSON
-            value=$(echo "$value" | sed 's/"/\\"/g')
-            json="$json,\"$key\":\"$value\""
-          fi
-        done
-        
-        json="$json,\"message\":\"$message\"}"
-        echo "$json" >&2
       else
         # Structured format (default)
         local prefix="[$(_log_timestamp)] [workflow:$WORKFLOW_NAME]"

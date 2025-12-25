@@ -23,6 +23,7 @@
 7. [Retry Mechanism](#retry-mechanism)
 8. [Secrets Management](#secrets-management)
 9. [Artifacts Management](#artifacts-management)
+   - [Custom Restore Paths](#custom-restore-paths)
 10. [API Reference](#api-reference)
 11. [Implementation](#implementation)
 12. [User Guide](#user-guide)
@@ -245,6 +246,7 @@ Executor :: {
   #   - SSH: scp from $NIXACTIONS_ARTIFACTS_DIR to remote
   restoreArtifact :: {
     name    :: String,  # Artifact name
+    path    :: String,  # Target path (relative to job dir, default ".")
     jobName :: String,  # Job to restore into
   } -> Bash,
 }
@@ -330,8 +332,8 @@ Job :: {
   env :: AttrSet String = {},
   
   # Artifacts
-  inputs  :: [String] = [],          # Artifacts to restore
-  outputs :: AttrSet String = {},    # Artifacts to save
+  inputs  :: [String | { name :: String, path :: String }] = [],  # Artifacts to restore (simple or with custom path)
+  outputs :: AttrSet String = {},                                   # Artifacts to save
 }
 ```
 
@@ -351,8 +353,9 @@ For each job:
    → Subsequent calls skip creation (lazy init pattern)
 
 2. Restore artifacts (if inputs specified)
-   → for each input: executor.restoreArtifact { name; jobName; }
+   → for each input: executor.restoreArtifact { name; path; jobName; }
    → Executed on HOST, copies from $NIXACTIONS_ARTIFACTS_DIR to execution env
+   → Custom paths allow restoring to subdirectories (e.g., "lib/", "config/")
 
 3. Execute job
    → executor.executeJob { jobName; actionDerivations; env; }
@@ -1651,7 +1654,8 @@ jobs = {
 2. ✅ **HOST-based storage** - `$NIXACTIONS_ARTIFACTS_DIR` exists ONLY on control node (HOST)
 3. ✅ **Executor transfers files** - `saveArtifact`/`restoreArtifact` copy between execution env and HOST
 4. ✅ **Survives cleanup** - artifacts stored outside workspace
-5. ⚠️ **Job isolation by convention** - job directories persist but reading across jobs is UB
+5. ✅ **Custom restore paths** - control where artifacts are restored in job directory
+6. ⚠️ **Job isolation by convention** - job directories persist but reading across jobs is UB
 
 ---
 
@@ -1756,6 +1760,260 @@ job_test() {
   docker exec $CONTAINER bash -c 'cd /workspace/jobs/test && npm test'
 }
 ```
+
+---
+
+### Custom Restore Paths
+
+**Status:** ✅ IMPLEMENTED (Dec 25, 2025)
+
+Artifacts can be restored to custom paths within the job directory, enabling better organization for monorepos and complex workflows.
+
+#### API: Hybrid Approach
+
+Support both simple strings (backward compatible) and attribute sets (with custom path):
+
+```nix
+inputs = [
+  "dist"                              # Simple: restore to $JOB_DIR/
+  { name = "libs"; path = "lib/"; }   # Custom: restore to $JOB_DIR/lib/
+  { name = "config"; path = "../shared/"; }  # Relative paths allowed
+]
+```
+
+#### Syntax
+
+**Simple (string):**
+```nix
+inputs = [ "artifact-name" ]
+# Equivalent to:
+inputs = [ { name = "artifact-name"; path = "."; } ]
+```
+
+**Custom path (attribute set):**
+```nix
+inputs = [
+  {
+    name = "artifact-name";  # Required: artifact to restore
+    path = "target/dir/";     # Required: where to restore (relative to $JOB_DIR)
+  }
+]
+```
+
+**Path semantics:**
+- `.` or `./` - Root of job directory (default)
+- `subdir/` - Subdirectory within job directory
+- `../other/` - Relative to job directory (can go up)
+- `/absolute/` - Absolute path (use with caution!)
+
+#### Use Cases
+
+**1. Multiple build outputs to different locations**
+```nix
+# Want:
+# - frontend dist -> public/
+# - backend dist -> server/
+# - shared libs -> lib/
+
+inputs = [
+  { name = "frontend-dist"; path = "public/"; }
+  { name = "backend-dist"; path = "server/"; }
+  { name = "shared-libs"; path = "lib/"; }
+]
+```
+
+**2. Monorepo with multiple services**
+```nix
+# Want:
+# - api build -> services/api/
+# - worker build -> services/worker/
+# - common -> shared/
+
+inputs = [
+  { name = "api-dist"; path = "services/api/dist/"; }
+  { name = "worker-dist"; path = "services/worker/dist/"; }
+  { name = "common"; path = "shared/"; }
+]
+```
+
+**3. Legacy systems with specific directory structure**
+```nix
+# Want:
+# - application -> /opt/app/
+# - config -> /etc/app/
+# - data -> /var/app/
+
+inputs = [
+  { name = "app-binary"; path = "/opt/app/"; }
+  { name = "app-config"; path = "/etc/app/"; }
+  { name = "app-data"; path = "/var/app/"; }
+]
+```
+
+#### Examples
+
+**Default behavior (unchanged):**
+```nix
+jobs.deploy = {
+  needs = [ "build" ];
+  inputs = [ "dist" ];  # Restored to $JOB_DIR/
+  actions = [
+    (actions.runCommand "ls dist/")  # Works as before
+  ];
+}
+```
+
+**Custom subdirectories:**
+```nix
+jobs.package = {
+  needs = [ "build-frontend" "build-backend" ];
+  inputs = [
+    { name = "frontend"; path = "public/"; }
+    { name = "backend"; path = "server/"; }
+  ];
+  actions = [
+    (actions.runCommand ''
+      ls public/    # Frontend files
+      ls server/    # Backend files
+    '')
+  ];
+}
+```
+
+**Mixed usage:**
+```nix
+jobs.test = {
+  needs = [ "build" "lint" ];
+  inputs = [
+    "dist"                          # Default: to root
+    { name = "lint-results"; path = "reports/"; }  # Custom: to reports/
+  ];
+  actions = [
+    (actions.runCommand ''
+      cat dist/package.json
+      cat reports/lint.txt
+    '')
+  ];
+}
+```
+
+**Monorepo deployment:**
+```nix
+jobs.deploy-all = {
+  needs = [ "build-api" "build-worker" "build-frontend" ];
+  inputs = [
+    { name = "api-dist"; path = "services/api/"; }
+    { name = "worker-dist"; path = "services/worker/"; }
+    { name = "frontend-dist"; path = "public/"; }
+    { name = "shared-config"; path = "config/"; }
+  ];
+  actions = [
+    (actions.runCommand "deploy-monorepo")
+  ];
+}
+```
+
+#### Implementation
+
+Custom restore paths are implemented in:
+- `lib/mk-workflow.nix` - `normalizeInput()` function converts strings to attribute sets
+- `lib/executors/local-helpers.nix` - `restore_local_artifact()` accepts `target_path` parameter
+- `lib/executors/oci-helpers.nix` - `restore_oci_artifact()` accepts `target_path` parameter
+- `lib/executors/local.nix` - `restoreArtifact` function signature updated
+- `lib/executors/oci.nix` - `restoreArtifact` function signature updated
+
+**Normalization (mk-workflow.nix):**
+```nix
+# Convert inputs to normalized form
+normalizeInput = input:
+  if builtins.isString input
+  then { name = input; path = "."; }
+  else input;
+
+normalizedInputs = map normalizeInput (job.inputs or []);
+```
+
+**Local executor (local-helpers.nix):**
+```bash
+restore_local_artifact() {
+  local name=$1
+  local target_path=$2  # NEW: target path
+  local job_name=$3
+  
+  JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/$job_name"
+  
+  if [ -e "$NIXACTIONS_ARTIFACTS_DIR/$name" ]; then
+    # Create target directory
+    TARGET="$JOB_DIR/$target_path"
+    mkdir -p "$(dirname "$TARGET")"
+    
+    # Handle different path cases
+    if [ "$target_path" = "." ] || [ "$target_path" = "./" ]; then
+      # Restore to root
+      cp -r "$NIXACTIONS_ARTIFACTS_DIR/$name"/* "$JOB_DIR/" 2>/dev/null || true
+    else
+      # Restore to specific path
+      mkdir -p "$TARGET"
+      cp -r "$NIXACTIONS_ARTIFACTS_DIR/$name"/* "$TARGET/" 2>/dev/null || true
+    fi
+    
+    return 0
+  else
+    _log_workflow artifact "$name" event "✗" "Artifact not found"
+    return 1
+  fi
+}
+```
+
+**OCI executor (oci-helpers.nix):**
+```bash
+restore_oci_artifact() {
+  local name=$1
+  local target_path=$2  # NEW
+  local job_name=$3
+  local container_id=$4
+  
+  # Docker cp to specific path in container
+  if [ "$target_path" = "." ]; then
+    docker cp "$NIXACTIONS_ARTIFACTS_DIR/$name"/. "$container_id:$JOB_DIR/"
+  else
+    docker exec "$container_id" mkdir -p "$JOB_DIR/$target_path"
+    docker cp "$NIXACTIONS_ARTIFACTS_DIR/$name"/. "$container_id:$JOB_DIR/$target_path/"
+  fi
+}
+```
+
+#### Backward Compatibility
+
+Existing code continues to work:
+
+```nix
+# Old syntax (still works)
+inputs = [ "dist" "binary" ]
+
+# Equivalent to:
+inputs = [
+  { name = "dist"; path = "."; }
+  { name = "binary"; path = "."; }
+]
+```
+
+Users can mix old and new syntax:
+
+```nix
+inputs = [
+  "dist"                              # Old syntax
+  { name = "config"; path = "etc/"; } # New syntax
+]
+```
+
+#### Testing
+
+Comprehensive test available in `examples/02-features/artifacts.nix`:
+- Default restore (backward compatibility)
+- Custom restore paths
+- Mixed syntax
+- Multiple artifacts to different locations
 
 ---
 
@@ -2093,12 +2351,19 @@ mkExecutor {
   '';
   
   # Restore artifact (executed on HOST before job starts)
-  restoreArtifact = { name, jobName }: ''
+  restoreArtifact = { name, path, jobName }: ''
     JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/${jobName}"
     if [ -e "$NIXACTIONS_ARTIFACTS_DIR/${name}" ]; then
       # Restore to job directory (will be created by executeJob)
       mkdir -p "$JOB_DIR"
-      cp -r "$NIXACTIONS_ARTIFACTS_DIR/${name}"/* "$JOB_DIR/" 2>/dev/null || true
+      
+      # Handle custom restore path
+      if [ "${path}" = "." ] || [ "${path}" = "./" ]; then
+        cp -r "$NIXACTIONS_ARTIFACTS_DIR/${name}"/* "$JOB_DIR/" 2>/dev/null || true
+      else
+        mkdir -p "$JOB_DIR/${path}"
+        cp -r "$NIXACTIONS_ARTIFACTS_DIR/${name}"/* "$JOB_DIR/${path}/" 2>/dev/null || true
+      fi
     else
       echo "  ✗ Artifact not found: ${name}"
       return 1
@@ -2233,7 +2498,7 @@ mkExecutor {
   
   # Restore artifact (executed on HOST before job starts)
   # Uses docker cp to copy from host to container
-  restoreArtifact = { name, jobName }: ''
+  restoreArtifact = { name, path, jobName }: ''
     if [ -z "''${CONTAINER_ID_OCI_${lib.strings.sanitizeDerivationName image}:-}" ]; then
       echo "  ✗ Container not initialized"
       return 1
@@ -2245,12 +2510,23 @@ mkExecutor {
       # Ensure job directory exists in container
       ${pkgs.docker}/bin/docker exec "$CONTAINER_ID_OCI_${lib.strings.sanitizeDerivationName image}" mkdir -p "$JOB_DIR"
       
-      # Copy each file/directory from artifact to container
-      for item in "$NIXACTIONS_ARTIFACTS_DIR/${name}"/*; do
-        if [ -e "$item" ]; then
-          ${pkgs.docker}/bin/docker cp "$item" "$CONTAINER_ID_OCI_${lib.strings.sanitizeDerivationName image}:$JOB_DIR/"
-        fi
-      done
+      # Handle custom restore path
+      if [ "${path}" = "." ] || [ "${path}" = "./" ]; then
+        # Restore to root of job directory
+        for item in "$NIXACTIONS_ARTIFACTS_DIR/${name}"/*; do
+          if [ -e "$item" ]; then
+            ${pkgs.docker}/bin/docker cp "$item" "$CONTAINER_ID_OCI_${lib.strings.sanitizeDerivationName image}:$JOB_DIR/"
+          fi
+        done
+      else
+        # Restore to custom path
+        ${pkgs.docker}/bin/docker exec "$CONTAINER_ID_OCI_${lib.strings.sanitizeDerivationName image}" mkdir -p "$JOB_DIR/${path}"
+        for item in "$NIXACTIONS_ARTIFACTS_DIR/${name}"/*; do
+          if [ -e "$item" ]; then
+            ${pkgs.docker}/bin/docker cp "$item" "$CONTAINER_ID_OCI_${lib.strings.sanitizeDerivationName image}:$JOB_DIR/${path}/"
+          fi
+        done
+      fi
     else
       echo "  ✗ Artifact not found: ${name}"
       return 1
@@ -2507,7 +2783,8 @@ platform.mkWorkflow {
 - ⏳ OCI executor with provisioning
 - ⏳ SSH executor with nix-copy-closure
 - ⏳ K8s executor
-- ⏳ Artifacts (inputs/outputs)
+- ✅ Artifacts (inputs/outputs)
+- ✅ Custom restore paths for artifacts
 
 ### Phase 3: Ecosystem ⏳
 
