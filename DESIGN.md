@@ -2876,17 +2876,38 @@ in {
 mkExecutor :: {
   name :: String,
   
+  # Repository copying behavior
+  # Default: true - copy $PWD to job directory before executing actions
+  copyRepo :: Bool = true,
+  
+  # === WORKSPACE LEVEL ===
+  
   setupWorkspace :: {
-    actionDerivations :: [Derivation]  # All actions that will be executed
+    actionDerivations :: [Derivation]  # All actions from ALL jobs using this executor
   } -> Bash,
   
-  cleanupWorkspace :: Bash,
+  cleanupWorkspace :: {
+    actionDerivations :: [Derivation]  # All actions from ALL jobs using this executor
+  } -> Bash,
+  
+  # === JOB LEVEL ===
+  
+  setupJob :: {
+    jobName           :: String,
+    actionDerivations :: [Derivation],  # Actions for THIS job only
+  } -> Bash,
   
   executeJob :: {
     jobName           :: String,
     actionDerivations :: [Derivation],
     env               :: AttrSet,
   } -> Bash,
+  
+  cleanupJob :: {
+    jobName :: String,
+  } -> Bash,
+  
+  # === ARTIFACTS ===
   
   saveArtifact :: {
     name    :: String,
@@ -2896,8 +2917,14 @@ mkExecutor :: {
   
   restoreArtifact :: {
     name    :: String,
+    path    :: String,  # Target path (relative to job dir)
     jobName :: String,
   } -> Bash,
+  
+  # === DEPRECATED (may be removed) ===
+  provision?      :: Null,
+  fetchArtifacts? :: Null,
+  pushArtifacts?  :: Null,
 } -> Executor
 ```
 
@@ -2906,6 +2933,9 @@ mkExecutor :: {
 ```nix
 platform.mkExecutor {
   name = "custom";
+  copyRepo = true;  # Copy repository to job directory (default)
+  
+  # === WORKSPACE LEVEL ===
   
   setupWorkspace = { actionDerivations }: ''
     # Lazy init - only create if not exists
@@ -2926,9 +2956,20 @@ platform.mkExecutor {
     fi
   '';
   
-  cleanupWorkspace = ''
+  cleanupWorkspace = { actionDerivations }: ''
     echo "→ Cleaning up workspace"
+    echo "→ Cleaning ${toString (builtins.length actionDerivations)} actions"
     rm -rf /workspace
+  '';
+  
+  # === JOB LEVEL ===
+  
+  setupJob = { jobName, actionDerivations }: ''
+    echo "→ Setting up job: ${jobName}"
+    mkdir -p /workspace/jobs/${jobName}
+    
+    # Job-specific setup (start container, create pod, etc.)
+    echo "→ Job has ${toString (builtins.length actionDerivations)} actions"
   '';
   
   executeJob = { jobName, actionDerivations, env }: ''
@@ -2952,6 +2993,14 @@ platform.mkExecutor {
     '') actionDerivations}
   '';
   
+  cleanupJob = { jobName }: ''
+    echo "→ Cleaning up job: ${jobName}"
+    # Job-specific cleanup (stop container, remove pod, etc.)
+    # Note: Workspace-level cleanup happens in cleanupWorkspace
+  '';
+  
+  # === ARTIFACTS ===
+  
   saveArtifact = { name, path, jobName }: ''
     # Copy from execution env to $NIXACTIONS_ARTIFACTS_DIR on HOST
     if [ -e "/workspace/jobs/${jobName}/${path}" ]; then
@@ -2971,17 +3020,28 @@ platform.mkExecutor {
     fi
   '';
   
-  restoreArtifact = { name, jobName }: ''
+  restoreArtifact = { name, path, jobName }: ''
     # Copy from $NIXACTIONS_ARTIFACTS_DIR on HOST to execution env
     if [ -e "$NIXACTIONS_ARTIFACTS_DIR/${name}" ]; then
       mkdir -p "/workspace/jobs/${jobName}"
       
-      # Copy each file/directory from artifact
-      for item in "$NIXACTIONS_ARTIFACTS_DIR/${name}"/*; do
-        if [ -e "$item" ]; then
-          cp -r "$item" "/workspace/jobs/${jobName}/"
-        fi
-      done
+      # Handle custom restore path
+      if [ "${path}" = "." ] || [ "${path}" = "./" ]; then
+        # Restore to root of job directory
+        for item in "$NIXACTIONS_ARTIFACTS_DIR/${name}"/*; do
+          if [ -e "$item" ]; then
+            cp -r "$item" "/workspace/jobs/${jobName}/"
+          fi
+        done
+      else
+        # Restore to custom path
+        mkdir -p "/workspace/jobs/${jobName}/${path}"
+        for item in "$NIXACTIONS_ARTIFACTS_DIR/${name}"/*; do
+          if [ -e "$item" ]; then
+            cp -r "$item" "/workspace/jobs/${jobName}/${path}/"
+          fi
+        done
+      fi
     else
       echo "  ✗ Artifact not found: ${name}"
       return 1
@@ -3034,273 +3094,319 @@ platform.mkWorkflow {
 
 ### Executor: Local
 
+The local executor runs jobs directly on the host machine in isolated directories.
+
+**Key features:**
+- Uses `makeConfigurable` for flexible configuration
+- Delegates to `local-helpers.nix` for bash functions
+- Uses `action-runner.nix` for consistent action execution with retry/timeout support
+- Supports `copyRepo` option to copy repository to job directory
+
 ```nix
 # lib/executors/local.nix
 { pkgs, lib, mkExecutor }:
 
-mkExecutor {
-  name = "local";
+let
+  actionRunner = import ./action-runner.nix { inherit lib pkgs; };
+  localHelpers = import ./local-helpers.nix { inherit pkgs lib; };
+  makeConfigurable = import ../make-configurable.nix { inherit lib; };
+in
+
+makeConfigurable {
+  # Default configuration
+  defaultConfig = {
+    copyRepo = true;
+    name = null;
+  };
   
-  # Setup local workspace in /tmp
-  # Expects $WORKFLOW_ID to be set
-  setupWorkspace = { actionDerivations }: ''
-    # Lazy init - only create if not exists
-    if [ -z "''${WORKSPACE_DIR_LOCAL:-}" ]; then
-      WORKSPACE_DIR_LOCAL="/tmp/nixactions/$WORKFLOW_ID"
-      mkdir -p "$WORKSPACE_DIR_LOCAL"
-      export WORKSPACE_DIR_LOCAL
-      echo "→ Local workspace: $WORKSPACE_DIR_LOCAL"
-    fi
-  '';
-  
-  # Cleanup workspace (respects NIXACTIONS_KEEP_WORKSPACE)
-  cleanupWorkspace = ''
-    if [ -n "''${WORKSPACE_DIR_LOCAL:-}" ]; then
-      if [ "''${NIXACTIONS_KEEP_WORKSPACE:-}" != "1" ]; then
-        echo ""
-        echo "→ Cleaning up local workspace: $WORKSPACE_DIR_LOCAL"
-        rm -rf "$WORKSPACE_DIR_LOCAL"
-      else
-        echo ""
-        echo "→ Local workspace preserved: $WORKSPACE_DIR_LOCAL"
-      fi
-    fi
-  '';
-  
-  # Execute job locally in isolated directory
-  executeJob = { jobName, actionDerivations, env }: ''
-    # Create isolated directory for this job
-    JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/${jobName}"
-    mkdir -p "$JOB_DIR"
-    cd "$JOB_DIR"
+  # Function that creates executor from config
+  make = { copyRepo ? true, name ? null }: 
+    let
+      executorName = if name != null then name else "local";
+    in
+    mkExecutor {
+      inherit copyRepo;
+      name = executorName;
     
-    echo "╔════════════════════════════════════════╗"
-    echo "║ JOB: ${jobName}"
-    echo "║ EXECUTOR: local"
-    echo "║ WORKDIR: $JOB_DIR"
-    echo "╚════════════════════════════════════════╝"
+    # === WORKSPACE LEVEL ===
     
-    # Set job-level environment
-    ${lib.concatStringsSep "\n" (
-      lib.mapAttrsToList (k: v: 
-        "export ${k}=${lib.escapeShellArg (toString v)}"
-      ) env
-    )}
+    # Setup local workspace in /tmp (called once at workflow start)
+    setupWorkspace = { actionDerivations }: ''
+      source ${localHelpers}/bin/nixactions-local-executor
+      setup_local_workspace
+    '';
     
-    # Execute action derivations
-    ${lib.concatMapStringsSep "\n\n" (action: ''
-      echo "→ ${action.passthru.name or "action"}"
-      ${action}/bin/${action.passthru.name or "run"}
-    '') actionDerivations}
-  '';
-  
-  # Local executor doesn't need fetch/push - artifacts already on control node
-  fetchArtifacts = null;
-  pushArtifacts = null;
-  
-  # Save artifact (executed on HOST after job completes)
-  saveArtifact = { name, path, jobName }: ''
-    JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/${jobName}"
-    if [ -e "$JOB_DIR/${path}" ]; then
-      rm -rf "$NIXACTIONS_ARTIFACTS_DIR/${name}"
-      mkdir -p "$NIXACTIONS_ARTIFACTS_DIR/${name}"
+    # Cleanup workspace (called once at workflow end)
+    cleanupWorkspace = { actionDerivations }: ''
+      source ${localHelpers}/bin/nixactions-local-executor
+      cleanup_local_workspace
+    '';
+    
+    # === JOB LEVEL ===
+    
+    # Setup job directory (called before executeJob)
+    setupJob = { jobName, actionDerivations }: ''
+      source ${localHelpers}/bin/nixactions-local-executor
+      export NIXACTIONS_COPY_REPO=${if copyRepo then "true" else "false"}
+      setup_local_job "${jobName}"
+    '';
+    
+    # Execute job locally in isolated directory
+    executeJob = { jobName, actionDerivations, env }: ''
+      # Set job-level environment variables
+      ${lib.concatStringsSep "\n" (
+        lib.mapAttrsToList (k: v: ''
+          if [ -z "''${${k}+x}" ]; then
+            export ${k}=${lib.escapeShellArg (toString v)}
+          fi'') env
+      )}
       
-      # Save preserving original path structure
-      PARENT_DIR=$(dirname "${path}")
-      if [ "$PARENT_DIR" != "." ]; then
-        mkdir -p "$NIXACTIONS_ARTIFACTS_DIR/${name}/$PARENT_DIR"
+      # Execute actions using action-runner
+      ACTION_FAILED=false
+      ${lib.concatMapStringsSep "\n" (action: 
+        let
+          actionName = action.passthru.name or (builtins.baseNameOf action);
+        in
+          actionRunner.generateActionExecution {
+            inherit action jobName;
+            actionBinary = "${action}/bin/${lib.escapeShellArg actionName}";
+          }
+      ) actionDerivations}
+      
+      if [ "$ACTION_FAILED" = "true" ]; then
+        _log_job "${jobName}" event "✗" "Job failed due to action failures"
+        exit 1
       fi
-      
-      cp -r "$JOB_DIR/${path}" "$NIXACTIONS_ARTIFACTS_DIR/${name}/${path}"
-    else
-      echo "  ✗ Path not found: ${path}"
-      return 1
-    fi
-  '';
-  
-  # Restore artifact (executed on HOST before job starts)
-  restoreArtifact = { name, path, jobName }: ''
-    JOB_DIR="$WORKSPACE_DIR_LOCAL/jobs/${jobName}"
-    if [ -e "$NIXACTIONS_ARTIFACTS_DIR/${name}" ]; then
-      # Restore to job directory (will be created by executeJob)
-      mkdir -p "$JOB_DIR"
-      
-      # Handle custom restore path
-      if [ "${path}" = "." ] || [ "${path}" = "./" ]; then
-        cp -r "$NIXACTIONS_ARTIFACTS_DIR/${name}"/* "$JOB_DIR/" 2>/dev/null || true
-      else
-        mkdir -p "$JOB_DIR/${path}"
-        cp -r "$NIXACTIONS_ARTIFACTS_DIR/${name}"/* "$JOB_DIR/${path}/" 2>/dev/null || true
-      fi
-    else
-      echo "  ✗ Artifact not found: ${name}"
-      return 1
-    fi
-  '';
+    '';
+    
+    # Cleanup job resources (called after executeJob)
+    cleanupJob = { jobName }: ''
+      # Nothing to cleanup for local executor at job level
+      # Job directory cleanup happens in cleanupWorkspace
+    '';
+    
+    # === ARTIFACTS ===
+    
+    # Save artifact (executed on HOST after job completes)
+    saveArtifact = { name, path, jobName }: ''
+      save_local_artifact "${name}" "${path}" "${jobName}"
+    '';
+    
+    # Restore artifact (executed on HOST before job starts)
+    restoreArtifact = { name, path ? ".", jobName }: ''
+      restore_local_artifact "${name}" "${path}" "${jobName}"
+    '';
+  };
 }
+```
+
+**Usage:**
+```nix
+# Default (copyRepo = true, name = "local")
+executor = platform.executors.local
+
+# Customize
+executor = platform.executors.local { copyRepo = false; }
+
+# Custom name (creates separate workspace)
+executor = platform.executors.local { name = "isolated-local"; }
 ```
 
 ---
 
 ### Executor: OCI
 
+The OCI executor runs each job in a separate Docker container with volume mounts.
+
+**Key features:**
+- **Per-job containers**: Each job gets its own container (not shared workspace container)
+- **Host volume mount**: Job directory on host is mounted to `/workspace` in container
+- **Nix store mount**: `/nix/store` mounted read-only for action derivations
+- **Supports `copyRepo`**: Repository copied to host job directory (visible in container)
+- **Custom names**: Custom names create isolated workspaces
+
+**Architecture:**
+```
+Host:
+  /tmp/nixactions/$WORKFLOW_ID/oci-nixos_nix/
+    └─ jobs/
+       ├─ build/  ← mounted to container1:/workspace
+       ├─ test/   ← mounted to container2:/workspace
+       └─ deploy/ ← mounted to container3:/workspace
+
+Container:
+  /workspace/     ← Host job directory (read-write)
+  /nix/store/     ← Host nix store (read-only)
+```
+
 ```nix
 # lib/executors/oci.nix
 { pkgs, lib, mkExecutor }:
 
-{ image ? "nixos/nix" }:
+{
+  image ? "nixos/nix",
+  copyRepo ? true,  # Copy repository to job directory
+  name ? null,      # Custom name (defaults to "oci-${sanitized-image}")
+}:
+
+let
+  # Sanitize image name for bash variable names
+  safeName = builtins.replaceStrings ["-" "/" ":"] ["_" "_" "_"] image;
+  
+  # Use custom name if provided, otherwise auto-generate from image
+  executorName = if name != null then name else "oci-${safeName}";
+  sanitizedExecutorName = builtins.replaceStrings ["-" "/" ":"] ["_" "_" "_"] executorName;
+  
+  actionRunner = import ./action-runner.nix { inherit lib pkgs; };
+in
 
 mkExecutor {
-  name = "oci-${lib.strings.sanitizeDerivationName image}";
+  inherit copyRepo;
+  name = executorName;
   
-  # Setup container workspace
-  # Expects $WORKFLOW_ID to be set
+  # === WORKSPACE LEVEL ===
+  
+  # Setup workspace directory on host (called once at workflow start)
   setupWorkspace = { actionDerivations }: ''
-    # Lazy init - only create if not exists
-    if [ -z "''${CONTAINER_ID_OCI_${lib.strings.sanitizeDerivationName image}:-}" ]; then
-      echo "→ Creating OCI container from image: ${image}"
-      
-      # Create and start long-running container with /nix/store mounted
-      CONTAINER_ID_OCI_${lib.strings.sanitizeDerivationName image}=$(${pkgs.docker}/bin/docker create \
-        -v /nix/store:/nix/store:ro \
-        ${image} \
-        sleep infinity)
-      
-      ${pkgs.docker}/bin/docker start "$CONTAINER_ID_OCI_${lib.strings.sanitizeDerivationName image}"
-      
-      export CONTAINER_ID_OCI_${lib.strings.sanitizeDerivationName image}
-      
-      # Create workspace directory in container
-      ${pkgs.docker}/bin/docker exec "$CONTAINER_ID_OCI_${lib.strings.sanitizeDerivationName image}" mkdir -p /workspace
-      
-      echo "→ OCI workspace: container $CONTAINER_ID_OCI_${lib.strings.sanitizeDerivationName image}:/workspace"
-      
-      # Actions available via /nix/store mount (no need to copy)
-      # Could also build custom image with actionDerivations baked in
+    WORKSPACE_DIR_${sanitizedExecutorName}="/tmp/nixactions/$WORKFLOW_ID/${executorName}"
+    mkdir -p "$WORKSPACE_DIR_${sanitizedExecutorName}"
+    export WORKSPACE_DIR_${sanitizedExecutorName}
+    
+    _log_workflow executor "${executorName}" action_count "${toString (builtins.length actionDerivations)}" \
+      event "→" "Workspace created (${toString (builtins.length actionDerivations)} actions)"
+  '';
+  
+  # Cleanup workspace directory on host (called once at workflow end)
+  cleanupWorkspace = { actionDerivations }: ''
+    if [ -n "''${WORKSPACE_DIR_${sanitizedExecutorName}:-}" ] && [ -d "$WORKSPACE_DIR_${sanitizedExecutorName}" ]; then
+      if [ "''${NIXACTIONS_KEEP_WORKSPACE:-}" != "1" ]; then
+        _log_workflow executor "${executorName}" event "→" "Cleaning up workspace"
+        rm -rf "$WORKSPACE_DIR_${sanitizedExecutorName}"
+      else
+        _log_workflow executor "${executorName}" event "→" "Workspace preserved"
+      fi
     fi
   '';
   
-  # Cleanup container
-  cleanupWorkspace = ''
-    if [ -n "''${CONTAINER_ID_OCI_${lib.strings.sanitizeDerivationName image}:-}" ]; then
-      echo ""
-      echo "→ Stopping and removing OCI container: $CONTAINER_ID_OCI_${lib.strings.sanitizeDerivationName image}"
-      ${pkgs.docker}/bin/docker stop "$CONTAINER_ID_OCI_${lib.strings.sanitizeDerivationName image}" >/dev/null 2>&1 || true
-      ${pkgs.docker}/bin/docker rm "$CONTAINER_ID_OCI_${lib.strings.sanitizeDerivationName image}" >/dev/null 2>&1 || true
-    fi
-  '';
+  # === JOB LEVEL ===
   
-  # Execute job in container
-  executeJob = { jobName, actionDerivations, env }: ''
-    # Ensure workspace is initialized
-    if [ -z "''${CONTAINER_ID_OCI_${lib.strings.sanitizeDerivationName image}:-}" ]; then
-      echo "Error: OCI workspace not initialized for ${image}"
-      exit 1
+  # Setup job: create directory, copy repo, start container
+  setupJob = { jobName, actionDerivations }: ''
+    # 1. Create job directory on host
+    JOB_DIR_HOST="$WORKSPACE_DIR_${sanitizedExecutorName}/jobs/${jobName}"
+    mkdir -p "$JOB_DIR_HOST"
+    
+    # 2. Copy repository to job directory (if copyRepo enabled)
+    if [ "${if copyRepo then "true" else "false"}" = "true" ]; then
+      _log_job "${jobName}" event "→" "Copying repository to job directory"
+      rsync -a --exclude='.git' --exclude='result*' --exclude='.direnv' "$PWD/" "$JOB_DIR_HOST/"
+      _log_job "${jobName}" event "✓" "Repository copied"
     fi
     
+    # 3. Start container for this job with mount
+    JOB_CONTAINER_${sanitizedExecutorName}_${jobName}=$(${pkgs.docker}/bin/docker run -d \
+      -v "$JOB_DIR_HOST:/workspace" \
+      -v /nix/store:/nix/store:ro \
+      -e WORKFLOW_NAME \
+      ${image} sleep infinity)
+    
+    export JOB_CONTAINER_${sanitizedExecutorName}_${jobName}
+    
+    _log_job "${jobName}" executor "${executorName}" container "$JOB_CONTAINER_${sanitizedExecutorName}_${jobName}" \
+      event "→" "Container started"
+  '';
+  
+  # Execute actions in container
+  executeJob = { jobName, actionDerivations, env }: ''
     ${pkgs.docker}/bin/docker exec \
-      ${lib.concatMapStringsSep " " (k: "-e ${k}") (lib.attrNames env)} \
-      "$CONTAINER_ID_OCI_${lib.strings.sanitizeDerivationName image}" \
+      "$JOB_CONTAINER_${sanitizedExecutorName}_${jobName}" \
       bash -c ${lib.escapeShellArg ''
-        set -euo pipefail
+        set -uo pipefail
+        cd /workspace
         
-        # Create job directory
-        JOB_DIR="/workspace/jobs/${jobName}"
-        mkdir -p "$JOB_DIR"
-        cd "$JOB_DIR"
+        # Source helpers from /nix/store
+        source /nix/store/*-nixactions-logging/bin/nixactions-logging
+        source /nix/store/*-nixactions-retry/bin/nixactions-retry
+        source /nix/store/*-nixactions-runtime/bin/nixactions-runtime
         
-        echo "╔════════════════════════════════════════╗"
-        echo "║ JOB: ${jobName}"
-        echo "║ EXECUTOR: oci-${lib.strings.sanitizeDerivationName image}"
-        echo "║ WORKDIR: $JOB_DIR"
-        echo "╚════════════════════════════════════════╝"
+        _log_job "${jobName}" executor "${executorName}" event "▶" "Job starting"
         
         # Set job-level environment
         ${lib.concatStringsSep "\n" (
-          lib.mapAttrsToList (k: v: 
-            "export ${k}=${lib.escapeShellArg (toString v)}"
-          ) env
+          lib.mapAttrsToList (k: v: "export ${k}=${lib.escapeShellArg (toString v)}") env
         )}
         
-        # Execute action derivations
-        ${lib.concatMapStringsSep "\n\n" (action: ''
-          echo "→ ${action.passthru.name or "action"}"
-          ${action}/bin/${action.passthru.name or "run"}
-        '') actionDerivations}
+        # Execute actions using action-runner
+        ACTION_FAILED=false
+        ${lib.concatMapStringsSep "\n" (action: 
+          let actionName = action.passthru.name or (builtins.baseNameOf action);
+          in actionRunner.generateActionExecution {
+            inherit action jobName;
+            actionBinary = "${action}/bin/${lib.escapeShellArg actionName}";
+          }
+        ) actionDerivations}
+        
+        if [ "$ACTION_FAILED" = "true" ]; then
+          _log_job "${jobName}" event "✗" "Job failed"
+          exit 1
+        fi
       ''}
   '';
   
-  fetchArtifacts = null;
-  pushArtifacts = null;
+  # Cleanup job: stop and remove container
+  cleanupJob = { jobName }: ''
+    _log_job "${jobName}" event "→" "Stopping container"
+    ${pkgs.docker}/bin/docker stop "$JOB_CONTAINER_${sanitizedExecutorName}_${jobName}" >/dev/null 2>&1 || true
+    ${pkgs.docker}/bin/docker rm "$JOB_CONTAINER_${sanitizedExecutorName}_${jobName}" >/dev/null 2>&1 || true
+  '';
   
-  # Save artifact (executed on HOST after job completes)
-  # Uses docker cp to copy from container to host
+  # === ARTIFACTS ===
+  
+  # Save artifact (HOST: job directory already on host via mount)
   saveArtifact = { name, path, jobName }: ''
-    if [ -z "''${CONTAINER_ID_OCI_${lib.strings.sanitizeDerivationName image}:-}" ]; then
-      echo "  ✗ Container not initialized"
-      return 1
-    fi
+    JOB_DIR_HOST="$WORKSPACE_DIR_${sanitizedExecutorName}/jobs/${jobName}"
     
-    JOB_DIR="/workspace/jobs/${jobName}"
-    
-    # Check if path exists in container
-    if ${pkgs.docker}/bin/docker exec "$CONTAINER_ID_OCI_${lib.strings.sanitizeDerivationName image}" test -e "$JOB_DIR/${path}"; then
+    if [ -e "$JOB_DIR_HOST/${path}" ]; then
       rm -rf "$NIXACTIONS_ARTIFACTS_DIR/${name}"
       mkdir -p "$NIXACTIONS_ARTIFACTS_DIR/${name}"
-      
-      # Preserve directory structure
-      PARENT_DIR=$(dirname "${path}")
-      if [ "$PARENT_DIR" != "." ]; then
-        mkdir -p "$NIXACTIONS_ARTIFACTS_DIR/${name}/$PARENT_DIR"
-      fi
-      
-      # Copy from container to host
-      ${pkgs.docker}/bin/docker cp \
-        "$CONTAINER_ID_OCI_${lib.strings.sanitizeDerivationName image}:$JOB_DIR/${path}" \
-        "$NIXACTIONS_ARTIFACTS_DIR/${name}/${path}"
+      cp -r "$JOB_DIR_HOST/${path}" "$NIXACTIONS_ARTIFACTS_DIR/${name}/${path}"
     else
-      echo "  ✗ Path not found: ${path}"
+      _log_workflow artifact "${name}" event "✗" "Path not found: ${path}"
       return 1
     fi
   '';
   
-  # Restore artifact (executed on HOST before job starts)
-  # Uses docker cp to copy from host to container
-  restoreArtifact = { name, path, jobName }: ''
-    if [ -z "''${CONTAINER_ID_OCI_${lib.strings.sanitizeDerivationName image}:-}" ]; then
-      echo "  ✗ Container not initialized"
-      return 1
-    fi
-    
+  # Restore artifact (HOST: copy to job directory, visible in container via mount)
+  restoreArtifact = { name, path ? ".", jobName }: ''
     if [ -e "$NIXACTIONS_ARTIFACTS_DIR/${name}" ]; then
-      JOB_DIR="/workspace/jobs/${jobName}"
+      JOB_DIR_HOST="$WORKSPACE_DIR_${sanitizedExecutorName}/jobs/${jobName}"
       
-      # Ensure job directory exists in container
-      ${pkgs.docker}/bin/docker exec "$CONTAINER_ID_OCI_${lib.strings.sanitizeDerivationName image}" mkdir -p "$JOB_DIR"
-      
-      # Handle custom restore path
       if [ "${path}" = "." ] || [ "${path}" = "./" ]; then
-        # Restore to root of job directory
-        for item in "$NIXACTIONS_ARTIFACTS_DIR/${name}"/*; do
-          if [ -e "$item" ]; then
-            ${pkgs.docker}/bin/docker cp "$item" "$CONTAINER_ID_OCI_${lib.strings.sanitizeDerivationName image}:$JOB_DIR/"
-          fi
-        done
+        mkdir -p "$JOB_DIR_HOST"
+        cp -r "$NIXACTIONS_ARTIFACTS_DIR/${name}"/* "$JOB_DIR_HOST/"
       else
-        # Restore to custom path
-        ${pkgs.docker}/bin/docker exec "$CONTAINER_ID_OCI_${lib.strings.sanitizeDerivationName image}" mkdir -p "$JOB_DIR/${path}"
-        for item in "$NIXACTIONS_ARTIFACTS_DIR/${name}"/*; do
-          if [ -e "$item" ]; then
-            ${pkgs.docker}/bin/docker cp "$item" "$CONTAINER_ID_OCI_${lib.strings.sanitizeDerivationName image}:$JOB_DIR/${path}/"
-          fi
-        done
+        mkdir -p "$JOB_DIR_HOST/${path}"
+        cp -r "$NIXACTIONS_ARTIFACTS_DIR/${name}"/* "$JOB_DIR_HOST/${path}/"
       fi
     else
-      echo "  ✗ Artifact not found: ${name}"
+      _log_workflow artifact "${name}" event "✗" "Artifact not found"
       return 1
     fi
   '';
 }
+```
+
+**Usage:**
+```nix
+# Default (image = "nixos/nix", copyRepo = true)
+executor = platform.executors.oci { image = "node:20"; }
+
+# Without repo copy
+executor = platform.executors.oci { image = "alpine:3.19"; copyRepo = false; }
+
+# Custom name (creates separate workspace even with same image)
+executor = platform.executors.oci { image = "nixos/nix"; name = "build-env"; }
+executor = platform.executors.oci { image = "nixos/nix"; name = "test-env"; }
 ```
 
 ---

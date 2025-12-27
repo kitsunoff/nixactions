@@ -101,71 +101,129 @@ $ ssh server < result
 
 ## Examples
 
-This repository includes 10 working examples:
+Examples are organized into categories:
 
-### Simple Workflow
+### 01-basic/ - Core Concepts
+
+**simple.nix** - Most basic workflow
 ```bash
 $ nix run .#example-simple
 ```
-Basic sequential job execution with actions.
+Single job with basic actions (checkout, greet, system-info).
 
-### Parallel Workflow
+**parallel.nix** - Parallel execution with dependencies
 ```bash
 $ nix run .#example-parallel
 ```
-Demonstrates parallel execution with multiple levels.
+Jobs running in parallel (Level 0), sequential dependencies via `needs`, multi-level DAG execution.
 
-### Complete CI/CD Pipeline
+**env-sharing.nix** - Environment variable sharing between actions
+```bash
+$ nix run .#example-env-sharing
+```
+Actions writing to `$JOB_ENV`, variable persistence across actions, multi-step calculations.
+
+---
+
+### 02-features/ - Advanced Features
+
+**artifacts.nix** / **artifacts-paths.nix** - Artifact passing between jobs
+```bash
+$ nix run .#example-artifacts
+$ nix run .#example-artifacts-paths
+```
+`outputs` to save artifacts, `inputs` to restore, custom restore paths, directory artifacts.
+
+**retry.nix** - Automatic retry on failures
+```bash
+$ nix run .#example-retry
+```
+Three backoff strategies (exponential, linear, constant), configurable delays, retry at workflow/job/action levels.
+
+**secrets.nix** - Secrets management with env-providers
+```bash
+$ nix run .#example-secrets
+```
+Multiple providers (SOPS, file, static, required), environment precedence, runtime override.
+
+**nix-shell.nix** - Dynamic package loading
+```bash
+$ nix run .#example-nix-shell
+```
+Add packages on-the-fly with `platform.actions.nixShell`, no executor modification needed.
+
+**matrix-builds.nix** - Compile-time matrix job generation
+```bash
+$ nix run .#example-matrix-builds
+```
+`platform.mkMatrixJobs` for cross-platform testing, multi-version testing, auto-generated job names.
+
+**structured-logging.nix** - Log formats for observability
+```bash
+$ nix run .#example-structured-logging
+```
+Three formats: structured (default), JSON, simple. Duration tracking, exit code reporting.
+
+**test-action-conditions.nix** - Action-level conditions
+```bash
+$ nix run .#example-test-action-conditions
+```
+`success()`, `failure()`, `always()` conditions, bash script conditions, `continue-on-error`.
+
+**multi-executor.nix** - Multiple executors in one workflow
+```bash
+$ nix run .#example-multi-executor
+```
+Different jobs using different executors, executor-specific configuration.
+
+**test-env.nix** / **test-isolation.nix** - Testing environment behavior
+```bash
+$ nix run .#example-test-env
+$ nix run .#example-test-isolation
+```
+Environment propagation, job isolation, workspace isolation.
+
+---
+
+### 03-real-world/ - Production Pipelines
+
+**complete.nix** - Full-featured CI/CD pipeline
 ```bash
 $ nix run .#example-complete
 ```
-Full-featured pipeline with:
-- Parallel linting & validation
-- Testing
-- Building
-- Deployment
-- Notifications
-- Cleanup (always runs)
+Complete workflow: parallel validation → testing → building → conditional deployment → notifications → cleanup.
 
-### Secrets Management
-```bash
-$ nix run .#example-secrets
-
-# With runtime environment override
-$ API_KEY=secret123 nix run .#example-secrets
-```
-Demonstrates environment variables at workflow/job/action levels.
-
-### Test Environment Propagation
-```bash
-$ nix run .#example-test-env
-```
-Demonstrates that environment variables (secrets) propagate between actions correctly.
-
-### Test Job Isolation
-```bash
-$ nix run .#example-test-isolation
-```
-Demonstrates job isolation - environment variables don't leak between jobs (subshell by design).
-
-### Python CI/CD Pipeline
+**python-ci.nix** / **python-ci-simple.nix** - Python CI/CD
 ```bash
 $ nix run .#example-python-ci
 $ nix run .#example-python-ci-simple
 ```
-Real-world example: Python project with unit tests (pytest), linting (flake8), type checking (mypy), and Docker image building.
+Real Python project: pytest, flake8, mypy, coverage, Docker building, deployment.
 
-### Docker Executor
+**nodejs-full-pipeline.nix** - Node.js CI/CD with OCI executor
 ```bash
-$ nix run .#example-docker-ci
+$ nix run .#example-nodejs-full-pipeline
 ```
-Demonstrates running jobs inside Docker containers using the OCI executor.
+Full Node.js pipeline in containers: lint → test → build → artifacts.
 
-### Dynamic Package Loading (nixShell)
+**buildah-pipeline.nix** / **buildah-multi-image.nix** - Container image building
 ```bash
-$ nix run .#example-nix-shell
+$ nix run .#example-buildah-pipeline
+$ nix run .#example-buildah-multi-image
 ```
-Shows how to dynamically add packages to job environments without modifying executors.
+Build OCI images with Buildah (no Docker daemon), multi-arch builds.
+
+---
+
+### Comprehensive Test Suites
+
+```bash
+# Retry mechanism (10 test jobs)
+$ nix run .#test-retry-comprehensive
+
+# Action conditions (10 test jobs)  
+$ nix run .#test-conditions-comprehensive
+```
 
 ## Core Concepts
 
@@ -174,33 +232,42 @@ Shows how to dynamically add packages to job environments without modifying exec
 Executors define **where** code runs:
 
 ```nix
-# Local machine
-executor = platform.executors.local;
+# Local machine (default)
+executor = platform.executors.local
 
-# Remote via SSH
-executor = platform.executors.ssh {
-  host = "build-server.internal";
-  user = "ci";
-};
+# Local with options
+executor = platform.executors.local { 
+  copyRepo = false;  # Don't copy repository to job directory
+  name = "build-env";  # Custom name for isolated workspace
+}
 
 # Docker container
-executor = platform.executors.oci {
-  image = "nixos/nix";
-};
+executor = platform.executors.oci { 
+  image = "node:20";
+  copyRepo = true;   # Copy repo to job directory (default)
+}
 
-# Kubernetes
-executor = platform.executors.k8s {
-  namespace = "ci";
-};
+# Custom executor name (creates separate workspace)
+executor = platform.executors.oci { 
+  image = "nixos/nix"; 
+  name = "test-env";  # Custom name
+}
 ```
 
 Available executors:
-- `local` - Current machine
-- `ssh` - Remote via SSH
-- `oci` - Docker/OCI containers
-- `nixos-container` - systemd-nspawn
+- `local` - Current machine with isolated job directories
+- `oci` - Docker/OCI containers with volume mounts
+
+Planned executors:
+- `ssh` - Remote via SSH with nix-copy-closure
 - `k8s` - Kubernetes pods
+- `nixos-container` - systemd-nspawn
 - `nomad` - Nomad jobs
+
+**Executor Architecture:**
+- Workspace-level hooks (`setupWorkspace`, `cleanupWorkspace`) - called once per unique executor
+- Job-level hooks (`setupJob`, `executeJob`, `cleanupJob`) - called per job
+- Jobs with same executor share workspace but get isolated directories
 
 ### Actions
 
@@ -367,19 +434,23 @@ jobs = {
 
 #### Conditional Execution
 
+NixActions uses `condition` (not `if`) for unified semantics at both job and action levels:
+
 ```nix
+# Built-in conditions (workflow-aware)
 {
-  # Only if all needed jobs succeeded (default)
-  "if" = "success()";
-  
-  # Only if any needed job failed
-  "if" = "failure()";
-  
-  # Always run (notifications, cleanup)
-  "if" = "always()";
-  
-  # Only if workflow cancelled
-  "if" = "cancelled()";
+  condition = "success()";    # Default - run if all deps succeeded
+  condition = "failure()";    # Run if any dep failed
+  condition = "always()";     # Always run (notifications, cleanup)
+  condition = "cancelled()";  # Run if workflow cancelled
+}
+
+# Bash script conditions (full power)
+{
+  condition = ''[ "$BRANCH" = "main" ]'';           # Environment check
+  condition = ''[ -f package.json ]'';              # File check
+  condition = ''git diff --quiet main..HEAD'';      # Git condition
+  condition = ''[ "$CI" = "true" ] && test -n "$API_KEY"'';  # Combined
 }
 ```
 
@@ -389,27 +460,56 @@ Example:
 jobs = {
   test = { ... };
   
-  # Only runs if test succeeded
+  # Only runs if test succeeded (default)
   deploy = {
     needs = [ "test" ];
-    "if" = "success()";
+    condition = "success()";
     ...
   };
   
   # Only runs if test failed
   rollback = {
     needs = [ "test" ];
-    "if" = "failure()";
+    condition = "failure()";
     ...
   };
   
   # Always runs (cleanup, notifications)
   notify = {
     needs = [ "test" ];
-    "if" = "always()";
+    condition = "always()";
+    ...
+  };
+  
+  # Only on main branch
+  deploy-prod = {
+    needs = [ "test" ];
+    condition = ''[ "$BRANCH" = "main" ]'';
     ...
   };
 }
+```
+
+#### Action-level Conditions
+
+```nix
+actions = [
+  { bash = "npm test"; }
+  
+  # Only deploy on main branch
+  {
+    name = "deploy";
+    condition = ''[ "$BRANCH" = "main" ]'';
+    bash = "deploy.sh";
+  }
+  
+  # Always notify
+  {
+    name = "notify";
+    condition = "always()";
+    bash = "curl -X POST $WEBHOOK";
+  }
+];
 ```
 
 #### Continue on Error
@@ -428,29 +528,36 @@ nixactions/
 ├── flake.nix              # Nix flake entry point
 ├── lib/
 │   ├── default.nix        # Main API export
-│   ├── mk-executor.nix    # Executor constructor
+│   ├── mk-executor.nix    # Executor contract (5-hook model)
 │   ├── mk-workflow.nix    # Workflow compiler
+│   ├── mk-matrix-jobs.nix # Matrix job generator
+│   ├── retry.nix          # Retry mechanism
+│   ├── timeout.nix        # Timeout handling
+│   ├── logging.nix        # Structured logging
+│   ├── runtime-helpers.nix # Runtime bash helpers
 │   ├── executors/         # Built-in executors
-│   │   ├── local.nix
-│   │   ├── ssh.nix
-│   │   ├── oci.nix
-│   │   ├── nixos-container.nix
-│   │   ├── k8s.nix
-│   │   └── nomad.nix
-│   └── actions/           # Standard actions
-│       ├── setup.nix      # Setup actions
-│       ├── npm.nix        # NPM actions
-│       ├── sops.nix       # SOPS secrets
-│       ├── vault.nix      # Vault secrets
-│       ├── 1password.nix  # 1Password
-│       ├── age.nix        # Age encryption
-│       ├── bitwarden.nix  # Bitwarden
-│       └── require-env.nix # Env validation
-└── examples/              # Working examples
-    ├── simple.nix
-    ├── parallel.nix
-    ├── complete.nix
-    └── secrets.nix
+│   │   ├── local.nix      # Local machine
+│   │   ├── oci.nix        # Docker/OCI containers
+│   │   ├── action-runner.nix  # Action execution engine
+│   │   ├── local-helpers.nix  # Local executor bash functions
+│   │   └── oci-helpers.nix    # OCI executor bash functions
+│   ├── actions/           # Standard actions
+│   │   ├── checkout.nix   # Repository checkout
+│   │   ├── nix-shell.nix  # Dynamic package loading
+│   │   ├── npm.nix        # NPM actions
+│   │   └── setup.nix      # Setup actions
+│   ├── env-providers/     # Environment variable providers
+│   │   ├── file.nix       # .env file loading
+│   │   ├── sops.nix       # SOPS encrypted files
+│   │   ├── static.nix     # Hardcoded values
+│   │   └── required.nix   # Validation
+│   └── jobs/              # Pre-built job templates
+│       └── buildah-build-push.nix  # OCI image building
+└── examples/              # Working examples (30+)
+    ├── 01-basic/          # Core concepts
+    ├── 02-features/       # Advanced features
+    ├── 03-real-world/     # Production pipelines
+    └── 99-untested/       # Reference examples
 ```
 
 ## API Reference
@@ -460,17 +567,14 @@ nixactions/
 ```nix
 platform :: {
   # Core constructors
-  mkExecutor  :: ExecutorConfig -> Executor,
-  mkWorkflow  :: WorkflowConfig -> Derivation,
+  mkExecutor   :: ExecutorConfig -> Executor,
+  mkWorkflow   :: WorkflowConfig -> Derivation,
+  mkMatrixJobs :: MatrixConfig -> AttrSet Job,
   
   # Built-in executors
   executors :: {
-    local           :: Executor,
-    nixos-container :: Executor,
-    oci             :: { image :: String } -> Executor,
-    ssh             :: { host :: String, user :: String, port :: Int } -> Executor,
-    k8s             :: { namespace :: String } -> Executor,
-    nomad           :: { datacenter :: String } -> Executor,
+    local :: { copyRepo? :: Bool, name? :: String } -> Executor,
+    oci   :: { image :: String, copyRepo? :: Bool, name? :: String } -> Executor,
   },
   
   # Standard actions
@@ -479,7 +583,6 @@ platform :: {
     checkout     :: Action,
     setupNode    :: { version :: String } -> Action,
     setupPython  :: { version :: String } -> Action,
-    setupRust    :: Action,
     
     # Package management
     nixShell     :: [String] -> Action,
@@ -489,14 +592,19 @@ platform :: {
     npmTest      :: Action,
     npmBuild     :: Action,
     npmLint      :: Action,
-    
-    # Secrets management
-    sopsLoad     :: { file :: Path, format :: "yaml" | "json" | "dotenv" } -> Action,
-    vaultLoad    :: { path :: String, addr :: String } -> Action,
-    opLoad       :: { vault :: String, item :: String } -> Action,
-    ageDecrypt   :: { file :: Path, identity :: Path } -> Action,
-    bwLoad       :: { itemId :: String } -> Action,
-    requireEnv   :: [String] -> Action,
+  },
+  
+  # Environment providers
+  envProviders :: {
+    file     :: { path :: String, required? :: Bool } -> Derivation,
+    sops     :: { file :: Path, format? :: String, required? :: Bool } -> Derivation,
+    static   :: AttrSet String -> Derivation,
+    required :: [String] -> Derivation,
+  },
+  
+  # Pre-built jobs
+  jobs :: {
+    buildahBuildPush :: { ... } -> Job,
   },
 }
 ```
@@ -518,9 +626,14 @@ platform :: {
   executor        :: Executor,
   actions         :: [Action],
   needs           :: [String] = [],
-  "if"            :: "success()" | "failure()" | "always()" | "cancelled()" = "success()",
+  condition       :: Condition = "success()",  # success() | failure() | always() | cancelled() | BashScript
   continueOnError :: Bool = false,
   env             :: AttrSet String = {},
+  envFrom         :: [Derivation] = [],        # Environment providers
+  inputs          :: [String | { name, path }] = [],  # Artifacts to restore
+  outputs         :: AttrSet String = {},             # Artifacts to save
+  retry           :: RetryConfig | Null = null,
+  timeout         :: Int | Null = null,        # Seconds
 }
 ```
 
@@ -528,11 +641,25 @@ platform :: {
 
 ```nix
 {
-  name    :: String = "action",
-  bash    :: String,
-  deps    :: [Derivation] = [],
-  env     :: AttrSet String = {},
-  workdir :: Path | Null = null,
+  name      :: String = "action",
+  bash      :: String,
+  deps      :: [Derivation] = [],
+  env       :: AttrSet String = {},
+  workdir   :: Path | Null = null,
+  condition :: Condition | Null = null,  # Action-level condition
+  retry     :: RetryConfig | Null = null,
+  timeout   :: Int | Null = null,
+}
+```
+
+### Retry Config
+
+```nix
+{
+  max_attempts :: Int = 1,           # Total attempts (1 = no retry)
+  backoff      :: "exponential" | "linear" | "constant" = "exponential",
+  min_time     :: Int = 1,           # Minimum delay (seconds)
+  max_time     :: Int = 60,          # Maximum delay (seconds)
 }
 ```
 
@@ -574,17 +701,28 @@ platform :: {
 # Enter development environment
 $ nix develop
 
-# Run examples
+# Run basic examples
 $ nix run .#example-simple
 $ nix run .#example-parallel
-$ nix run .#example-complete
-$ nix run .#example-secrets
+$ nix run .#example-env-sharing
 
-# Build all examples
-$ nix build .#example-simple
-$ nix build .#example-parallel
-$ nix build .#example-complete
-$ nix build .#example-secrets
+# Run feature examples
+$ nix run .#example-artifacts
+$ nix run .#example-retry
+$ nix run .#example-secrets
+$ nix run .#example-matrix-builds
+
+# Run real-world examples
+$ nix run .#example-complete
+$ nix run .#example-python-ci
+$ nix run .#example-nodejs-full-pipeline
+
+# Run comprehensive test suites
+$ nix run .#test-retry-comprehensive
+$ nix run .#test-conditions-comprehensive
+
+# Compile all examples to bash scripts
+$ ./scripts/compile-examples.sh
 ```
 
 ## Roadmap
@@ -592,19 +730,25 @@ $ nix build .#example-secrets
 See [TODO.md](./TODO.md) for detailed implementation plan.
 
 **Phase 1 (MVP)**: ✅ COMPLETED
-- Core execution engine
-- Local executor
-- 6 executors (local, ssh, oci, nixos-container, k8s, nomad)
-- Standard actions library
-- Secrets management (6 integrations)
-- GitHub Actions-style execution
-- 4 working examples
+- Core execution engine with DAG-based parallel execution
+- Local executor with workspace/job isolation
+- OCI executor with per-job containers
+- Actions as Derivations (build-time compilation)
+- Retry mechanism (3 backoff strategies)
+- Timeout handling
+- Condition system (built-in + bash scripts)
+- Artifacts management with custom restore paths
+- Environment providers (file, sops, static, required)
+- Matrix job generation
+- Structured logging (3 formats)
+- 30+ working examples
 
-**Phase 2 (Next)**: Testing & Documentation
-- Comprehensive testing
-- Advanced executor features
+**Phase 2 (Next)**: Remote Executors & Ecosystem
+- SSH executor with nix-copy-closure
+- Kubernetes executor
 - Extended actions library
 - Production hardening
+- Documentation improvements
 
 ## License
 
@@ -613,8 +757,9 @@ MIT
 ## Documentation
 
 - **[DESIGN.md](./DESIGN.md)** - Detailed architecture and design decisions
-- **[COMPILED_EXAMPLES.md](./COMPILED_EXAMPLES.md)** - Compiled example outputs
 - **[TODO.md](./TODO.md)** - Implementation roadmap
+- **[CONTRIBUTING.md](./CONTRIBUTING.md)** - Contribution guidelines
+- **[compiled-examples/](./compiled-examples/)** - Compiled bash scripts showing generated code
 
 ## Contributing
 
