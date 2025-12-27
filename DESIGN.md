@@ -4,7 +4,7 @@
 
 **NixActions** - agentless CI/CD platform powered by Nix, following GitHub Actions execution model with build-time action compilation.
 
-**Elevator pitch:** "Ansible for CI/CD with a type-safe DSL and deterministic environments"
+**Elevator pitch:** "Ansible for CI/CD with a composable DSL and reproducible environments"
 
 **Core concept:** Compile workflows into self-contained executables that run anywhere without agents or central infrastructure. **Actions are Nix derivations**, provisioned at build-time.
 
@@ -61,7 +61,7 @@ GitHub Actions execution model:
 + Nix reproducibility:
   ✅ Deterministic builds
   ✅ Self-contained
-  ✅ Type-safe
+  ✅ Composable DSL
   ✅ Actions = Derivations
 
 + Agentless:
@@ -3631,13 +3631,38 @@ platform.mkWorkflow {
 | **Conditions** | `if: success()` etc | ✅ `condition` (unified) |
 | **Step conditions** | `steps[].if` | ✅ `actions[].condition` |
 | **Continue on error** | `continue-on-error` | ✅ Same (`continueOnError`) |
-| **Actions** | JavaScript/Docker | ✅ Nix derivations |
-| **Build-time validation** | ❌ Runtime only | ✅ Yes (Nix) |
+| **Actions** | JavaScript/Docker | Nix derivations |
+| **Configuration** | YAML | Nix DSL (composable, functional) |
+| **Environment** | Container images | Nix derivations (hermetic) |
+| **Dependencies mgmt** | Cached layers | Nix store (content-addressed) |
+| **Composition** | Reusable workflows | Nix functions |
 | **Infrastructure** | GitHub.com | ✅ None (agentless) |
-| **Local execution** | `act` (hacky) | ✅ Native `nix run` |
-| **Reproducibility** | ❌ Variable | ✅ Guaranteed (Nix) |
-| **Type safety** | ❌ YAML | ✅ Nix |
+| **Local execution** | `act` (partial compat) | ✅ Native `nix run` |
+| **Test without push** | ❌ Must push to repo | ✅ `nix run .#ci` locally |
+| **Build environments** | Variable (network, time) | Reproducible (Nix store) |
 | **Cost** | $21/month | ✅ $0 |
+
+### What NixActions Actually Guarantees
+
+**Reproducible:**
+- Workflow script compilation (same inputs → same `/nix/store` output)
+- Build environments (exact dependency versions via Nix)
+- Action derivations (cached, content-addressed)
+
+**Not guaranteed (same as any CI):**
+- Network call results (`curl`, API responses)
+- External service state (databases, deployments)
+- Time-dependent operations
+
+### Real Advantages
+
+NixActions wins on its **actual merits**, not exaggerated claims:
+
+1. **Local-first development** - test CI locally before pushing, no more "fix CI" commits
+2. **Evaluation-time composition** - Nix validates DSL structure and derivation graph
+3. **Everything is a derivation** - cacheable, reproducible build artifacts
+4. **Agentless execution** - no infrastructure to maintain, runs anywhere with Nix
+5. **Functional composition** - reuse actions as Nix functions, not copy-paste YAML
 
 ---
 
@@ -3912,12 +3937,12 @@ cat result/bin/test-shared-executor | grep "Workspace created"
 - ✅ Actions are Nix derivations (build-time compilation)
 - ✅ Executors provision derivations once (not per-job)
 - ✅ Unified `condition` system (jobs + actions)
-- ✅ Build-time validation
+- ✅ Local-first: test CI without pushing (`nix run .#ci`)
 - ✅ Caching via Nix store
 - ✅ Parallel execution (GitHub Actions style)
 - ✅ Explicit dependencies via `needs`
 - ✅ Agentless (SSH/containers/local)
-- ✅ Type-safe (Nix, not YAML)
+- ✅ Composable DSL (Nix functions, not YAML copy-paste)
 
 **Positioning:**
 > "GitHub Actions execution model + Nix reproducibility + Build-time action compilation = NixActions"

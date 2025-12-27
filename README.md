@@ -19,11 +19,11 @@
 ## Features
 
 ✅ **GitHub Actions-style execution** - Parallel by default, explicit dependencies via `needs`  
-✅ **Deterministic builds** - Nix guarantees reproducibility  
+✅ **Test without pushing** - Run `nix run .#ci` locally, no more "fix CI" commits  
+✅ **Reproducible environments** - Nix guarantees exact dependency versions  
 ✅ **Agentless** - No infrastructure needed, run anywhere (SSH/containers/local)  
-✅ **Type-safe** - Nix DSL instead of YAML  
-✅ **Local-first** - Test workflows locally before deploying  
-✅ **Composable** - Everything is a function  
+✅ **Composable DSL** - Nix functions instead of YAML copy-paste  
+✅ **Local-first** - CI works locally first, remote is optional  
 
 ## Quick Start
 
@@ -671,11 +671,13 @@ platform :: {
 |---------|---------------|------------|
 | Execution model | Parallel + needs | ✅ Same |
 | Dependencies | `needs: [...]` | ✅ Same |
-| Conditions | `if: success()` | ✅ Same |
+| Conditions | `if: success()` | ✅ Same (`condition`) |
+| Configuration | YAML | Nix DSL (composable) |
+| Environment | Container images | Nix derivations (hermetic) |
 | Infrastructure | GitHub.com | ✅ None (agentless) |
-| Local execution | `act` (limited) | ✅ Native |
-| Reproducibility | ❌ Variable | ✅ Guaranteed (Nix) |
-| Type safety | ❌ YAML | ✅ Nix |
+| Local execution | `act` (partial compat) | ✅ Native `nix run` |
+| Test without push | ❌ Must push to repo | ✅ `nix run .#ci` locally |
+| Build environments | Variable (network, time) | Reproducible (Nix store) |
 | Cost | $21/month+ | ✅ $0 |
 
 ### vs GitLab CI
@@ -685,15 +687,27 @@ platform :: {
 | Execution | Sequential by default | ✅ Parallel |
 | Infrastructure | GitLab instance | ✅ None |
 | Local testing | Limited | ✅ Native |
+| Test without push | ❌ Must push | ✅ Local `nix run` |
 
 ## Philosophy
 
-1. **Local-first** - CI should work locally first, remote is optional
+1. **Local-first** - CI should work locally first, remote is optional. No more "fix CI" commits.
 2. **Agentless** - No agents, no polling, no registration
-3. **Deterministic** - Nix guarantees reproducibility
-4. **Composable** - Everything is a function
+3. **Reproducible** - Nix guarantees exact build environments (not execution results)
+4. **Composable** - Everything is a Nix function, reuse without copy-paste
 5. **Simple** - Minimal abstractions, maximum power
 6. **Parallel** - Jobs run in parallel by default (like GitHub Actions)
+
+### What NixActions Guarantees
+
+**Reproducible:**
+- Workflow script compilation (same inputs → same output)
+- Build environments (exact dependency versions)
+- Action derivations (cached in Nix store)
+
+**Not guaranteed (same as any CI):**
+- Network call results (`curl`, API responses)
+- External service state
 
 ## Development
 
