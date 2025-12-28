@@ -770,7 +770,19 @@ MIT
 
 ## Documentation
 
-- **[DESIGN.md](./DESIGN.md)** - Detailed architecture and design decisions
+Full documentation is available in **[docs/](./docs/README.md)**:
+
+| Document | Description |
+|----------|-------------|
+| [User Guide](./docs/user-guide.md) | Quick start, installation, first workflow |
+| [Architecture](./docs/architecture.md) | System design, layered structure |
+| [Actions](./docs/actions.md) | Actions as Derivations, build-time compilation |
+| [Executors](./docs/executors.md) | Local, OCI, SSH, K8s executors |
+| [Conditions](./docs/conditions.md) | Conditional execution system |
+| [Environment](./docs/environment.md) | Env providers, secrets management |
+| [API Reference](./docs/api-reference.md) | Complete API documentation |
+
+Additional resources:
 - **[TODO.md](./TODO.md)** - Implementation roadmap
 - **[CONTRIBUTING.md](./CONTRIBUTING.md)** - Contribution guidelines
 - **[compiled-examples/](./compiled-examples/)** - Compiled bash scripts showing generated code
@@ -778,7 +790,7 @@ MIT
 ## Contributing
 
 Contributions are welcome! Please:
-1. Read [DESIGN.md](./DESIGN.md) for architecture details
+1. Read the [documentation](./docs/README.md) for architecture details
 2. Check [TODO.md](./TODO.md) for planned features
 3. Submit PRs with clear descriptions
 
