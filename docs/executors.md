@@ -12,8 +12,8 @@ NixActions supports multiple executors:
 |----------|--------|-------------|
 | `local` | Implemented | Run on current machine |
 | `oci` | Implemented | Run in Docker containers |
+| `k8s` | Implemented | Run in Kubernetes pods |
 | `ssh` | Planned | Run on remote hosts via SSH |
-| `k8s` | Planned | Run in Kubernetes pods |
 | `nixos-vm` | Planned | Run in NixOS VMs |
 
 ---
@@ -391,52 +391,200 @@ executor = platform.executors.ssh {
 
 ---
 
-## Kubernetes Executor (Planned)
+## Kubernetes Executor
 
-Run jobs in Kubernetes pods.
+Run jobs in Kubernetes pods with custom Nix-built images.
+
+### How It Works
+
+1. **Build phase** (`nix build`): Builds OCI image with all action derivations
+2. **Setup phase** (`nix run`):
+   - Loads image locally via `docker load`
+   - Pushes to configured registry
+   - Creates pod with `kubectl run`
+   - Copies repository to pod as "golden standard"
+3. **Job execution**: Jobs run via `kubectl exec` in the pod
+4. **Cleanup**: Pod deleted on workflow completion
 
 ### Configuration
 
 ```nix
 platform.executors.k8s {
-  # Required
+  # === Required ===
   namespace = "ci";
   
-  # Pod template
-  image = "nixos/nix:2.18.1";
+  registry = {
+    url = "ghcr.io/myorg";       # Container registry URL
+    usernameEnv = "REGISTRY_USER";     # Env var with username
+    passwordEnv = "REGISTRY_PASSWORD"; # Env var with password/token
+  };
+  
+  # === Mode ===
+  mode = "shared";        # "shared" (one pod) | "dedicated" (pod per job)
+  
+  # === Standard Options ===
+  copyRepo = true;
+  name = null;            # Custom executor name
+  extraPackages = [];     # Additional packages in image
+  containerEnv = {};      # Environment variables in container
+  
+  # === Kubeconfig ===
+  kubeconfigEnv = null;   # Env var with path to kubeconfig (default: ~/.kube/config)
+  contextEnv = null;      # Env var with context name (default: current context)
+  
+  # === Pod Spec ===
+  serviceAccount = null;
+  nodeSelector = {};
   resources = {
     requests = { cpu = "500m"; memory = "1Gi"; };
     limits = { cpu = "2"; memory = "4Gi"; };
   };
+  labels = {};
+  annotations = {};
   
-  # Optional
-  serviceAccount = "ci-runner";
-  nodeSelector = { "kubernetes.io/arch" = "amd64"; };
-  
-  # Mode
-  mode = "dedicated";  # "shared" | "dedicated"
-  
-  # Behavior
-  copyRepo = true;
-  name = null;
+  # === Timeouts ===
+  podReadyTimeout = 300;  # 5 minutes (fail if pod not ready)
 }
 ```
 
 ### Usage Examples
 
 ```nix
-# Basic K8s
+# Basic K8s with GitHub Container Registry
 executor = platform.executors.k8s {
   namespace = "ci";
+  registry = {
+    url = "ghcr.io/myorg";
+    usernameEnv = "GITHUB_USER";
+    passwordEnv = "GITHUB_TOKEN";
+  };
+};
+
+# Local registry for testing
+executor = platform.executors.k8s {
+  namespace = "default";
+  registry = {
+    url = "localhost:5000";
+    usernameEnv = "REGISTRY_USER";
+    passwordEnv = "REGISTRY_PASSWORD";
+  };
+};
+
+# Dedicated mode (pod per job)
+executor = platform.executors.k8s {
+  namespace = "ci";
+  registry = { ... };
+  mode = "dedicated";
 };
 
 # With GPU
 executor = platform.executors.k8s {
   namespace = "ml";
-  resources.limits = { "nvidia.com/gpu" = "1"; };
+  registry = { ... };
   nodeSelector = { "nvidia.com/gpu.present" = "true"; };
+  resources.limits = { "nvidia.com/gpu" = "1"; };
+};
+
+# Custom kubeconfig
+executor = platform.executors.k8s {
+  namespace = "ci";
+  registry = { ... };
+  kubeconfigEnv = "KUBECONFIG";
+  contextEnv = "KUBE_CONTEXT";
 };
 ```
+
+### Modes
+
+#### Shared Mode (Default)
+
+One pod serves all jobs in the workflow:
+
+```
+setupWorkspace
+    |
+    +-> docker load/tag/push
+    +-> kubectl run pod
+    +-> kubectl cp $PWD → pod:/workspace/.golden
+          |
+          +-> setupJob(job1) → cp .golden → jobs/job1
+          |   executeJob(job1) → kubectl exec
+          |   cleanupJob(job1) → (nothing)
+          |
+          +-> setupJob(job2) → cp .golden → jobs/job2
+              executeJob(job2) → kubectl exec
+              ...
+    |
+cleanupWorkspace → kubectl delete pod
+```
+
+**Pros:** Faster (no pod startup per job), shared workspace
+**Cons:** Less isolation between jobs
+
+#### Dedicated Mode
+
+Each job gets its own pod:
+
+```
+setupWorkspace → docker load/tag/push (once)
+
+setupJob(job1)
+    +-> kubectl run pod-job1
+    +-> kubectl cp $PWD → pod:/workspace
+executeJob(job1) → kubectl exec
+cleanupJob(job1) → kubectl delete pod
+
+setupJob(job2) → new pod
+    ...
+```
+
+**Pros:** Full isolation, parallel job support
+**Cons:** Slower (pod startup per job)
+
+### Workspace Structure
+
+```
+/workspace/
+├── .golden/          ← Repository copy (shared mode only)
+└── jobs/
+    ├── build/        ← Job working directory
+    └── test/
+```
+
+### Prerequisites
+
+1. **Kubernetes cluster** accessible via `kubectl`
+2. **Container registry** with push access
+3. **Environment variables** for registry auth:
+   ```bash
+   export REGISTRY_USER=myuser
+   export REGISTRY_PASSWORD=mytoken
+   ```
+
+### Testing with Local Registry
+
+```bash
+# Start local registry
+docker run -d -p 5000:5000 --name registry registry:2
+
+# Run K8s example (uses localhost:5000 by default)
+REGISTRY_USER=unused REGISTRY_PASSWORD=unused \
+  nix run .#example-test-k8s-shared
+```
+
+### Troubleshooting
+
+**Pod not ready:**
+- Check pod events: `kubectl describe pod nixactions-...`
+- Check pod logs: `kubectl logs nixactions-...`
+- Increase `podReadyTimeout` if image pull is slow
+
+**Registry auth failed:**
+- Verify env vars are set: `echo $REGISTRY_USER`
+- Test manually: `docker login <registry>`
+
+**kubectl cp failed:**
+- Ensure `tar` is available in the image (included by default)
 
 ---
 

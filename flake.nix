@@ -53,10 +53,34 @@
         allExamples;
       
       # Executor variants for generating packages
+      # Note: K8s executors are not included here as they require registry configuration
+      # K8s examples are generated separately with a default local registry config
       mkExecutorVariants = platform: {
         local = platform.executors.local;
         oci-shared = platform.executors.oci { mode = "shared"; };
         oci-isolated = platform.executors.oci { mode = "isolated"; };
+      };
+      
+      # K8s executor variants (with default local registry for testing)
+      mkK8sExecutorVariants = platform: {
+        k8s-shared = platform.executors.k8s {
+          namespace = "default";
+          registry = {
+            url = "localhost:5000";
+            usernameEnv = "REGISTRY_USER";
+            passwordEnv = "REGISTRY_PASSWORD";
+          };
+          mode = "shared";
+        };
+        k8s-dedicated = platform.executors.k8s {
+          namespace = "default";
+          registry = {
+            url = "localhost:5000";
+            usernameEnv = "REGISTRY_USER";
+            passwordEnv = "REGISTRY_PASSWORD";
+          };
+          mode = "dedicated";
+        };
       };
       
     in {
@@ -93,8 +117,18 @@
           # Convert to attribute set
           examplePackages = builtins.listToAttrs allVariants;
           
+          # K8s variants - only for test-k8s example (requires special setup)
+          k8sExecutorVariants = mkK8sExecutorVariants platform;
+          
+          k8sExamples = lib.mapAttrs' (variantName: executor: {
+            name = "example-test-k8s-${lib.removePrefix "k8s-" variantName}";
+            value = import ./examples/02-features/test-k8s.nix {
+              inherit pkgs platform executor;
+            };
+          }) k8sExecutorVariants;
+          
         in
-        examplePackages // {
+        examplePackages // k8sExamples // {
           # Set default to complete-local example
           default = examplePackages."example-complete-local" or examplePackages."example-simple-local" or (builtins.head (builtins.attrValues examplePackages));
         }
