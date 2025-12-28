@@ -110,6 +110,7 @@ in rec {
           lpkgs.gnused
           lpkgs.gawk
           lpkgs.gnutar  # Required for kubectl cp
+          lpkgs.hostname  # For hostname command
           
           # For bc in timing calculations
           lpkgs.bc
@@ -127,7 +128,7 @@ in rec {
           Cmd = [ "${lpkgs.coreutils}/bin/sleep" "infinity" ];
           WorkingDir = "/workspace";
           Env = [
-            "PATH=${lpkgs.bash}/bin:${lpkgs.coreutils}/bin:${lpkgs.findutils}/bin:${lpkgs.gnugrep}/bin:${lpkgs.gnused}/bin:${lpkgs.gawk}/bin:${lpkgs.gnutar}/bin:${lpkgs.bc}/bin:/bin"
+            "PATH=${lpkgs.bash}/bin:${lpkgs.coreutils}/bin:${lpkgs.findutils}/bin:${lpkgs.gnugrep}/bin:${lpkgs.gnused}/bin:${lpkgs.gawk}/bin:${lpkgs.gnutar}/bin:${lpkgs.hostname}/bin:${lpkgs.bc}/bin:/bin"
             "NIXACTIONS_LOG_FORMAT=structured"
           ] ++ (lib.mapAttrsToList (k: v: "${k}=${toString v}") containerEnv);
         };
