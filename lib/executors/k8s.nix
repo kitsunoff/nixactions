@@ -59,18 +59,33 @@ let
   # Generate pod name
   mkPodName = suffix: "nixactions-$WORKFLOW_ID-${executorName}" + lib.optionalString (suffix != "") "-${suffix}";
   
-  # Generate resource requests/limits for kubectl run
-  resourceArgs = 
+  # Generate resource overrides for kubectl run
+  # kubectl run doesn't support --requests/--limits directly, use --overrides
+  resourceOverrides = 
     let
       reqCpu = resources.requests.cpu or null;
       reqMem = resources.requests.memory or null;
       limCpu = resources.limits.cpu or null;
       limMem = resources.limits.memory or null;
+      
+      requests = lib.filterAttrs (k: v: v != null) {
+        cpu = reqCpu;
+        memory = reqMem;
+      };
+      limits = lib.filterAttrs (k: v: v != null) {
+        cpu = limCpu;
+        memory = limMem;
+      };
+      
+      resourcesObj = lib.filterAttrs (k: v: v != {}) {
+        inherit requests limits;
+      };
     in
-    lib.optionalString (reqCpu != null) " --requests='cpu=${reqCpu}'"
-    + lib.optionalString (reqMem != null) " --requests='memory=${reqMem}'"
-    + lib.optionalString (limCpu != null) " --limits='cpu=${limCpu}'"
-    + lib.optionalString (limMem != null) " --limits='memory=${limMem}'";
+    if resourcesObj == {} then ""
+    else " --overrides='{\"spec\":{\"containers\":[{\"name\":\"nixactions-${executorName}\",\"resources\":${builtins.toJSON resourcesObj}}]}}'";
+  
+  # For now, skip resources to simplify (kubectl run is limited)
+  resourceArgs = "";
   
   # Generate label args
   labelArgs = lib.concatStringsSep "" (
@@ -224,7 +239,9 @@ mkExecutor {
       # === K8s Shared Mode: Setup Job ===
       _log_job "${jobName}" executor "${executorName}" event "→" "Setting up job directory"
       
-      # Copy from golden standard to job directory
+      # Create jobs directory and copy from golden standard
+      ${kubectl "exec"} --namespace=${namespace} ${podName} -- \
+        mkdir -p /workspace/jobs >&2
       ${kubectl "exec"} --namespace=${namespace} ${podName} -- \
         cp -r /workspace/.golden /workspace/jobs/${jobName} >&2
       
@@ -292,6 +309,7 @@ mkExecutor {
     in ''
       # === K8s: Execute Job ===
       ${kubectl "exec"} --namespace=${namespace} ${podVar} -- \
+        env WORKFLOW_NAME="$WORKFLOW_NAME" WORKFLOW_ID="$WORKFLOW_ID" NIXACTIONS_LOG_FORMAT="$NIXACTIONS_LOG_FORMAT" \
         bash -c ${lib.escapeShellArg ''
           set -uo pipefail
           cd ${workdir}

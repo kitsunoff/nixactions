@@ -69,7 +69,7 @@
         k8s-shared = platform.executors.k8s {
           namespace = "default";
           registry = {
-            url = "localhost:5000";
+            url = "localhost:5001";  # Kind local registry port
             usernameEnv = "REGISTRY_USER";
             passwordEnv = "REGISTRY_PASSWORD";
           };
@@ -78,7 +78,7 @@
         k8s-dedicated = platform.executors.k8s {
           namespace = "default";
           registry = {
-            url = "localhost:5000";
+            url = "localhost:5001";  # Kind local registry port
             usernameEnv = "REGISTRY_USER";
             passwordEnv = "REGISTRY_PASSWORD";
           };

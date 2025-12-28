@@ -10,8 +10,11 @@
 #    - REGISTRY_PASSWORD: Registry password/token
 #
 # Usage:
-#   # With local registry (for testing)
-#   docker run -d -p 5000:5000 --name registry registry:2
+#   # With Kind cluster (recommended for testing)
+#   ./scripts/test-k8s-kind.sh shared
+#
+#   # With manual local registry
+#   docker run -d -p 5001:5000 --name registry registry:2
 #   REGISTRY_USER=unused REGISTRY_PASSWORD=unused nix run .#example-test-k8s-shared
 #
 #   # With real registry
