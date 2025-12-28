@@ -56,8 +56,15 @@ let
   
   kubectl = cmd: "${kubectlBase} ${cmd}";
   
-  # Generate pod name
-  mkPodName = suffix: "nixactions-$WORKFLOW_ID-${executorName}" + lib.optionalString (suffix != "") "-${suffix}";
+  # Generate pod name (K8s limits labels/names to 63 chars)
+  # Use short workflow ID: first 8 chars of name + timestamp suffix
+  mkPodName = suffix: 
+    let
+      suffixPart = lib.optionalString (suffix != "") "-${suffix}";
+      # Base: nixactions- (10) + exec name + suffix = variable
+      # We need to keep it under 63 chars total
+      # Use $WORKFLOW_SHORT_ID which is set to first 20 chars of workflow + timestamp
+    in "nxa-\${WORKFLOW_SHORT_ID}-${executorName}${suffixPart}";
   
   # Generate resource overrides for kubectl run
   # kubectl run doesn't support --requests/--limits directly, use --overrides

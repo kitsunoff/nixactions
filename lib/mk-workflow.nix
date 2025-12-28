@@ -276,7 +276,10 @@ in (pkgs.writeScriptBin name ''
   set -euo pipefail
   
   WORKFLOW_ID="${name}-$(date +%s)-$$"
-  export WORKFLOW_ID WORKFLOW_NAME="${name}"
+  # Short ID for K8s pod names (must be <63 chars total)
+  # Format: first 15 chars of name + last 8 chars of timestamp+pid
+  WORKFLOW_SHORT_ID="$(echo "${name}" | cut -c1-15)-$(echo "$(date +%s)-$$" | tail -c 12)"
+  export WORKFLOW_ID WORKFLOW_SHORT_ID WORKFLOW_NAME="${name}"
   export NIXACTIONS_LOG_FORMAT=''${NIXACTIONS_LOG_FORMAT:-${logging.format or "structured"}}
   
   source ${loggingLib.loggingHelpers}/bin/nixactions-logging

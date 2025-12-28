@@ -28,7 +28,7 @@ error() { echo -e "${RED}[nixactions]${NC} $*" >&2; }
 
 cleanup() {
     log "Cleaning up..."
-    kind delete cluster --name "$CLUSTER_NAME" 2>/dev/null || true
+    nix-shell -p kind --run "kind delete cluster --name $CLUSTER_NAME" 2>/dev/null || true
     docker rm -f "$REGISTRY_NAME" 2>/dev/null || true
     log "Cleanup complete"
 }
@@ -132,6 +132,10 @@ run_test() {
         matrix)
             log "Running matrix test with 10 parallel workers..."
             nix run ".#example-test-k8s-matrix-dedicated"
+            ;;
+        env-providers)
+            log "Running env-providers test..."
+            nix run ".#example-test-k8s-env-providers-dedicated"
             ;;
         *)
             nix run ".#example-test-k8s-shared"
