@@ -55,6 +55,15 @@ makeConfigurable {
       # Convert extraPackages to Linux versions
       linuxExtraPackages = map toLinuxPkg extraPackages;
       
+      # Helper to create unique action name based on content hash
+      # This ensures multiple actions with same name but different code get unique derivations
+      mkUniqueActionName = actionName: actionBash: actionDeps:
+        let
+          # Create a short hash from bash content and deps to make name unique
+          contentHash = builtins.substring 0 8 (builtins.hashString "sha256" 
+            (actionBash + builtins.concatStringsSep "," (map toString actionDeps)));
+        in "${actionName}-${contentHash}";
+      
       # Build OCI image from action derivations
       # This is called at Nix evaluation time, but the image is built lazily
       # IMPORTANT: Uses linuxPkgs (lpkgs) for all container content
@@ -69,15 +78,19 @@ makeConfigurable {
               
               # Convert all deps to Linux versions
               linuxDeps = map toLinuxPkg actionDeps;
+              
+              # Use unique name to avoid conflicts in container image
+              uniqueName = mkUniqueActionName actionName actionBash actionDeps;
             in
             if actionBash != null then
               lpkgs.writeShellApplication {
-                name = actionName;
+                name = uniqueName;
                 runtimeInputs = linuxDeps;
                 text = actionBash;
               } // {
                 passthru = action.passthru // {
                   deps = linuxDeps;
+                  originalName = actionName;
                 };
               }
             else
@@ -88,40 +101,51 @@ makeConfigurable {
           linuxAllDeps = lib.unique (lib.flatten (
             map (action: action.passthru.deps or []) linuxActionDerivations
           ));
-        in
-        lpkgs.dockerTools.buildLayeredImage {
-          name = "nixactions-${executorName}";
-          tag = "latest";
-          
-          contents = [
-            # Base utilities (Linux)
-            lpkgs.bash
-            lpkgs.coreutils
-            lpkgs.findutils
-            lpkgs.gnugrep
-            lpkgs.gnused
-            lpkgs.gawk
+          # Use host pkgs dockerTools for building (avoids cross-compilation issues)
+          # but Linux pkgs for container contents
+          streamScript = pkgs.dockerTools.streamLayeredImage {
+            name = "nixactions-${executorName}";
+            tag = "latest";
             
-            # For bc in timing calculations
-            lpkgs.bc
+            # Architecture for the image
+            architecture = if lpkgs.stdenv.hostPlatform.isAarch64 then "arm64" else "amd64";
             
-            # Runtime helpers (derivations) - already built with linuxPkgs
-            loggingLib.loggingHelpers
-            retryLib.retryHelpers
-            runtimeHelpers
-            timeoutLib.timeoutHelpers
+            contents = [
+              # Base utilities (Linux)
+              lpkgs.bash
+              lpkgs.coreutils
+              lpkgs.findutils
+              lpkgs.gnugrep
+              lpkgs.gnused
+              lpkgs.gawk
+              
+              # For bc in timing calculations
+              lpkgs.bc
+              
+              # Runtime helpers (derivations) - already built with linuxPkgs
+              loggingLib.loggingHelpers
+              retryLib.retryHelpers
+              runtimeHelpers
+              timeoutLib.timeoutHelpers
+              
+              # All action derivations (rebuilt for Linux)
+            ] ++ linuxActionDerivations ++ linuxAllDeps ++ linuxExtraPackages;
             
-            # All action derivations (rebuilt for Linux)
-          ] ++ linuxActionDerivations ++ linuxAllDeps ++ linuxExtraPackages;
-          
-          config = {
-            Cmd = [ "${lpkgs.coreutils}/bin/sleep" "infinity" ];
-            WorkingDir = "/workspace";
-            Env = [
-              "PATH=${lpkgs.bash}/bin:${lpkgs.coreutils}/bin:${lpkgs.findutils}/bin:${lpkgs.gnugrep}/bin:${lpkgs.gnused}/bin:${lpkgs.gawk}/bin:${lpkgs.bc}/bin:/bin"
-              "NIXACTIONS_LOG_FORMAT=structured"
-            ] ++ (lib.mapAttrsToList (k: v: "${k}=${toString v}") containerEnv);
+            config = {
+              Cmd = [ "${lpkgs.coreutils}/bin/sleep" "infinity" ];
+              WorkingDir = "/workspace";
+              Env = [
+                "PATH=${lpkgs.bash}/bin:${lpkgs.coreutils}/bin:${lpkgs.findutils}/bin:${lpkgs.gnugrep}/bin:${lpkgs.gnused}/bin:${lpkgs.gawk}/bin:${lpkgs.bc}/bin:/bin"
+                "NIXACTIONS_LOG_FORMAT=structured"
+              ] ++ (lib.mapAttrsToList (k: v: "${k}=${toString v}") containerEnv);
+            };
           };
+        in
+        # Return an attrset with image info and the stream script path
+        {
+          imageName = "nixactions-${executorName}";
+          imageTag = "latest";
+          inherit streamScript;
         };
       
       # Generate docker run extra mount arguments
@@ -149,9 +173,9 @@ makeConfigurable {
           
           _log_workflow executor "${executorName}" mode "shared" workspace "$WORKSPACE_DIR_${sanitizedExecutorName}" event "→" "Setting up OCI workspace"
           
-          # Load OCI image (built by Nix)
+          # Load OCI image (built by Nix using streamLayeredImage)
           _log_workflow executor "${executorName}" event "→" "Loading OCI image"
-          ${pkgs.docker}/bin/docker load < ${image}
+          ${image.streamScript} | ${pkgs.docker}/bin/docker load
           
           # Start container with workspace mount
           CONTAINER_ID_${sanitizedExecutorName}=$(${pkgs.docker}/bin/docker run -d \
@@ -280,9 +304,9 @@ makeConfigurable {
             _log_job "${jobName}" event "✓" "Repository copied"
           fi
           
-          # Load and start container for this job
+          # Load and start container for this job (using streamLayeredImage)
           _log_job "${jobName}" executor "${executorName}" event "→" "Loading job image"
-          ${pkgs.docker}/bin/docker load < ${jobImage}
+          ${jobImage.streamScript} | ${pkgs.docker}/bin/docker load
           
           JOB_CONTAINER_${sanitizedExecutorName}_${sanitizedJobName}=$(${pkgs.docker}/bin/docker run -d \
             -v "$JOB_DIR_HOST:/workspace" \
@@ -313,19 +337,27 @@ makeConfigurable {
             else "/workspace";
           
           # Rebuild actions for Linux (same logic as in buildExecutorImage)
+          # IMPORTANT: Must match exactly the derivations created in buildExecutorImage
           linuxActionDerivations = map (action:
             let
               actionName = action.passthru.name or (builtins.baseNameOf action);
               actionBash = action.passthru.bash or null;
               actionDeps = action.passthru.deps or [];
+              # Convert all deps to Linux versions - same as in buildExecutorImage
+              linuxDeps = map toLinuxPkg actionDeps;
+              # Use same unique name logic as buildExecutorImage
+              uniqueName = mkUniqueActionName actionName actionBash actionDeps;
             in
             if actionBash != null then
               lpkgs.writeShellApplication {
-                name = actionName;
-                runtimeInputs = actionDeps;
+                name = uniqueName;
+                runtimeInputs = linuxDeps;
                 text = actionBash;
               } // {
-                passthru = action.passthru;
+                passthru = action.passthru // {
+                  deps = linuxDeps;
+                  originalName = actionName;
+                };
               }
             else
               action
@@ -356,11 +388,16 @@ makeConfigurable {
               ACTION_FAILED=false
               ${lib.concatMapStringsSep "\n" (action: 
                 let
-                  actionName = action.passthru.name or (builtins.baseNameOf action);
+                  # Use originalName for logs, but unique name for binary path
+                  originalName = action.passthru.originalName or action.passthru.name or "action";
+                  # Get the actual derivation name (with hash suffix)
+                  drvName = action.name or (builtins.baseNameOf action);
                 in
                   actionRunner.generateActionExecution {
-                    inherit action jobName;
-                    actionBinary = "${action}/bin/${lib.escapeShellArg actionName}";
+                    # Override action name for logging
+                    action = action // { passthru = action.passthru // { name = originalName; }; };
+                    inherit jobName;
+                    actionBinary = "${action}/bin/${lib.escapeShellArg drvName}";
                     timingCommand = "date +%s%N 2>/dev/null || date +%s";
                   }
               ) linuxActionDerivations}
