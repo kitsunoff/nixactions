@@ -1,7 +1,7 @@
 # Test: Action conditions
 # Demonstrates success(), failure(), always(), and bash script conditions
 
-{ pkgs, platform }:
+{ pkgs, platform, executor ? platform.executors.local }:
 
 platform.mkWorkflow {
   name = "test-action-conditions";
@@ -9,7 +9,7 @@ platform.mkWorkflow {
   jobs = {
     # Test 1: success() condition (default)
     test-success = {
-      executor = platform.executors.local;
+      inherit executor;
       actions = [
         {
           name = "action1-succeeds";
@@ -26,7 +26,7 @@ platform.mkWorkflow {
     # Test 2: failure() condition
     test-failure = {
       needs = ["test-success"];
-      executor = platform.executors.local;
+      inherit executor;
       continue-on-error = true;  # This job is expected to fail
       actions = [
         {
@@ -49,7 +49,7 @@ platform.mkWorkflow {
     # Test 3: always() condition
     test-always = {
       needs = ["test-failure"];
-      executor = platform.executors.local;
+      inherit executor;
       continue-on-error = true;  # This job is expected to fail
       actions = [
         {
@@ -67,7 +67,7 @@ platform.mkWorkflow {
     # Test 4: bash script conditions
     test-bash-conditions = {
       needs = ["test-always"];
-      executor = platform.executors.local;
+      inherit executor;
       env = {
         ENVIRONMENT = "production";
         DEPLOY_ENABLED = "true";
@@ -98,7 +98,7 @@ platform.mkWorkflow {
     # Test 5: complex scenario
     test-complex = {
       needs = ["test-bash-conditions"];
-      executor = platform.executors.local;
+      inherit executor;
       continue-on-error = true;  # This job is expected to fail
       actions = [
         {

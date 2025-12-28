@@ -1,7 +1,7 @@
 # Example: Environment variable sharing between actions
 # Demonstrates practical patterns for sharing data between actions in a job
 
-{ pkgs, platform }:
+{ pkgs, platform, executor ? platform.executors.local }:
 
 platform.mkWorkflow {
   name = "env-sharing-demo";
@@ -9,7 +9,7 @@ platform.mkWorkflow {
   jobs = {
     # Job 1: Build with version and metadata
     build = {
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [
         {
@@ -94,7 +94,7 @@ EOF
     # Job 2: Advanced pattern - Using JOB_ENV file explicitly
     test-advanced = {
       needs = [ "build" ];
-      executor = platform.executors.local;
+      inherit executor;
       
       inputs = [ "build-info" ];
       
@@ -143,7 +143,7 @@ EOF
     # Job 3: Pattern for complex calculations
     calculate = {
       needs = [ "build" ];
-      executor = platform.executors.local;
+      inherit executor;
       
       inputs = [ "build-info" ];
       
@@ -209,7 +209,7 @@ EOF
     # Summary
     summary = {
       needs = [ "test-advanced" "calculate" ];
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [{
         name = "summary";

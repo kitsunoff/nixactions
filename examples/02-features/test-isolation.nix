@@ -1,5 +1,5 @@
 # Test: Job isolation - env vars don't leak between jobs
-{ pkgs, platform }:
+{ pkgs, platform, executor ? platform.executors.local }:
 
 platform.mkWorkflow {
   name = "test-job-isolation";
@@ -11,7 +11,7 @@ platform.mkWorkflow {
   
   jobs = {
     job1 = {
-      executor = platform.executors.local;
+      inherit executor;
       
       # Job1-level env
       env = {
@@ -46,7 +46,7 @@ platform.mkWorkflow {
     
     job2 = {
       needs = [ "job1" ];
-      executor = platform.executors.local;
+      inherit executor;
       
       # Job2-level env
       env = {

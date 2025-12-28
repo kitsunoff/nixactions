@@ -1,4 +1,4 @@
-{ pkgs, platform }:
+{ pkgs, platform, executor ? platform.executors.local }:
 
 # Comprehensive test suite for retry mechanism
 # Tests all backoff strategies, edge cases, and failure scenarios
@@ -9,7 +9,7 @@ platform.mkWorkflow {
   jobs = {
     # Test 1: Exponential backoff - succeeds on 3rd attempt
     test-exponential-success = {
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [
         {
@@ -46,7 +46,7 @@ platform.mkWorkflow {
     
     # Test 2: Linear backoff - succeeds on 2nd attempt
     test-linear-success = {
-      executor = platform.executors.local;
+      inherit executor;
       needs = ["test-exponential-success"];
       
       actions = [
@@ -83,7 +83,7 @@ platform.mkWorkflow {
     
     # Test 3: Constant backoff - succeeds on 2nd attempt
     test-constant-success = {
-      executor = platform.executors.local;
+      inherit executor;
       needs = ["test-linear-success"];
       
       actions = [
@@ -120,7 +120,7 @@ platform.mkWorkflow {
     
     # Test 4: Retry exhausted - all attempts fail
     test-retry-exhausted = {
-      executor = platform.executors.local;
+      inherit executor;
       needs = ["test-constant-success"];
       continueOnError = true;  # Don't stop workflow on failure
       
@@ -144,7 +144,7 @@ platform.mkWorkflow {
     
     # Test 5: No retry (max_attempts = 1)
     test-no-retry-single-attempt = {
-      executor = platform.executors.local;
+      inherit executor;
       needs = ["test-retry-exhausted"];
       
       actions = [
@@ -166,7 +166,7 @@ platform.mkWorkflow {
     
     # Test 6: Retry disabled (retry = null)
     test-retry-disabled = {
-      executor = platform.executors.local;
+      inherit executor;
       needs = ["test-no-retry-single-attempt"];
       retry = null;  # Explicitly disable retry
       
@@ -183,7 +183,7 @@ platform.mkWorkflow {
     
     # Test 7: Max delay cap - ensure backoff is capped at max_time
     test-max-delay-cap = {
-      executor = platform.executors.local;
+      inherit executor;
       needs = ["test-retry-disabled"];
       
       actions = [
@@ -220,7 +220,7 @@ platform.mkWorkflow {
     
     # Test 8: Job-level retry inheritance
     test-job-level-retry = {
-      executor = platform.executors.local;
+      inherit executor;
       needs = ["test-max-delay-cap"];
       
       # Job-level retry applies to all actions
@@ -259,7 +259,7 @@ platform.mkWorkflow {
     
     # Test 9: Action overrides job retry
     test-action-overrides-job = {
-      executor = platform.executors.local;
+      inherit executor;
       needs = ["test-job-level-retry"];
       
       retry = {
@@ -302,7 +302,7 @@ platform.mkWorkflow {
     
     # Test 10: Verify timing - ensure backoff delays are correct
     test-timing-verification = {
-      executor = platform.executors.local;
+      inherit executor;
       needs = ["test-action-overrides-job"];
       
       actions = [

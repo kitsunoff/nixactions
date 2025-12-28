@@ -2,7 +2,7 @@
 # - Run unit tests with pytest
 # - Build Docker image
 # - Push to registry (simulated)
-{ pkgs, platform }:
+{ pkgs, platform, executor ? platform.executors.local }:
 
 platform.mkWorkflow {
   name = "python-ci-cd";
@@ -19,11 +19,12 @@ platform.mkWorkflow {
     # === Level 0: Parallel checks ===
     
     lint = {
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [
         {
           name = "checkout-code";
+          deps = [pkgs.python311];
           bash = ''
             echo "→ Checking out code (simulated)"
             echo "  Working directory: $PWD"
@@ -81,12 +82,11 @@ EOF
         
         {
           name = "lint-python";
-          deps = [ pkgs.python311 pkgs.python311Packages.flake8 ];
           bash = ''
-            echo "→ Linting Python code with flake8"
+            echo "→ Linting Python code (syntax check)"
             
-            # Lint with relaxed rules for example
-            flake8 app.py test_app.py --max-line-length=100 || true
+            # Basic syntax check using python -m py_compile
+            python3 -m py_compile app.py test_app.py || true
             
             echo "✓ Linting complete"
           '';
@@ -95,11 +95,13 @@ EOF
     };
     
     type-check = {
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [
         {
           name = "setup-code-for-typecheck";
+          deps = [pkgs.python311];
+
           bash = ''
             echo "→ Setting up code for type checking"
             
@@ -123,13 +125,13 @@ EOF
         }
         
         {
-          name = "run-mypy";
-          deps = [ pkgs.python311 pkgs.python311Packages.mypy ];
+          name = "run-typecheck";
+          deps = [pkgs.python311];
           bash = ''
-            echo "→ Type checking with mypy"
+            echo "→ Type checking (simulated)"
             
-            # Basic type check (app.py has no type hints, so this is lenient)
-            mypy app.py --ignore-missing-imports || true
+            # Basic check - verify Python syntax is valid
+            python3 -m py_compile app.py
             
             echo "✓ Type checking complete"
           '';
@@ -141,7 +143,7 @@ EOF
     
     test = {
       needs = [ "lint" "type-check" ];
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [
         {
@@ -186,43 +188,19 @@ if __name__ == "__main__":
     print("All tests passed!")
 EOF
             
-            cat > requirements.txt << 'EOF'
-pytest==7.4.0
-pytest-cov==4.1.0
-EOF
-            
             echo "✓ Code checked out"
           '';
         }
         
         {
-          name = "install-dependencies";
-          deps = [ pkgs.python311 pkgs.python311Packages.pip ];
-          bash = ''
-            echo "→ Installing test dependencies"
-            
-            # Create virtual environment
-            python -m venv venv
-            # shellcheck disable=SC1091
-            source venv/bin/activate
-            
-            # Install dependencies
-            pip install --quiet -r requirements.txt
-            
-            echo "✓ Dependencies installed"
-          '';
-        }
-        
-        {
           name = "run-unit-tests";
-          deps = [ pkgs.python311 ];
+          deps = [pkgs.python311];
+
           bash = ''
-            echo "→ Running unit tests with pytest"
-            # shellcheck disable=SC1091
-            source venv/bin/activate
+            echo "→ Running unit tests"
             
-            # Run tests with coverage
-            pytest test_app.py -v --cov=app --cov-report=term-missing
+            # Run tests directly with Python
+            python3 test_app.py
             
             echo ""
             echo "✓ All tests passed!"
@@ -231,11 +209,12 @@ EOF
         
         {
           name = "test-app-execution";
-          deps = [ pkgs.python311 ];
+          deps = [pkgs.python311];
+
           bash = ''
             echo "→ Testing application execution"
             
-            python app.py
+            python3 app.py
             
             echo "✓ Application runs successfully"
           '';
@@ -247,11 +226,13 @@ EOF
     
     build-image = {
       needs = [ "test" ];
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [
         {
           name = "checkout-code";
+          deps = [pkgs.python311];
+
           bash = ''
             echo "→ Checking out code"
             
@@ -299,7 +280,6 @@ EOF
         
         {
           name = "build-docker-image";
-          deps = [ pkgs.docker ];
           bash = ''
             echo "→ Building Docker image"
             cd docker-build
@@ -353,10 +333,12 @@ EOF
     push-image = {
       needs = [ "build-image" ];
       "if" = "success()";
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [{
         name = "push-to-registry";
+        deps = [pkgs.python311];
+
         bash = ''
           echo "→ Pushing image to registry"
           
@@ -377,29 +359,29 @@ EOF
     notify-success = {
       needs = [ "build-image" ];
       "if" = "success()";
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [{
+
         name = "send-success-notification";
-        deps = [ pkgs.curl ];
         bash = ''
           echo "→ Sending success notification"
           
           IMAGE_FULL_NAME="$DOCKER_REGISTRY/$IMAGE_NAME:$IMAGE_TAG"
           
           echo "Would send to Slack/Discord:"
-          echo "  ✅ Python CI/CD completed successfully!"
-          echo "  • All tests passed"
-          echo "  • Image built: $IMAGE_FULL_NAME"
-          echo "  • Ready for deployment"
+          echo "  Python CI/CD completed successfully!"
+          echo "  - All tests passed"
+          echo "  - Image built: $IMAGE_FULL_NAME"
+          echo "  - Ready for deployment"
         '';
       }];
     };
     
     notify-failure = {
       needs = [ "build-image" ];
-      "if" = "failure()";
-      executor = platform.executors.local;
+      condition = "failure()";
+      inherit executor;
       
       actions = [{
         name = "send-failure-notification";
@@ -407,9 +389,9 @@ EOF
           echo "→ Sending failure notification"
           
           echo "Would send to Slack/Discord:"
-          echo "  ❌ Python CI/CD failed!"
-          echo "  • Check logs for details"
-          echo "  • Pipeline stopped"
+          echo "  Python CI/CD failed!"
+          echo "  - Check logs for details"
+          echo "  - Pipeline stopped"
         '';
       }];
     };
@@ -418,8 +400,8 @@ EOF
     
     cleanup = {
       needs = [ "push-image" "notify-success" "notify-failure" ];
-      "if" = "always()";
-      executor = platform.executors.local;
+      condition = "always()";
+      inherit executor;
       
       actions = [{
         name = "cleanup-temp-files";

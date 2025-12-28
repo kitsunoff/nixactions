@@ -1,4 +1,4 @@
-{ pkgs, platform }:
+{ pkgs, platform, executor ? platform.executors.local }:
 
 # Test: Environment Providers
 # 
@@ -53,7 +53,7 @@ platform.mkWorkflow {
   
   jobs = {
     test-priority = {
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [
         {
@@ -92,7 +92,7 @@ platform.mkWorkflow {
     
     test-required = {
       needs = ["test-priority"];
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [
         {
@@ -113,7 +113,7 @@ platform.mkWorkflow {
     
     test-runtime-override = {
       needs = ["test-required"];
-      executor = platform.executors.local;
+      inherit executor;
       
       # Job-level env has higher priority than workflow env
       env = {

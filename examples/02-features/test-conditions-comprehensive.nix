@@ -1,4 +1,4 @@
-{ pkgs, platform }:
+{ pkgs, platform, executor ? platform.executors.local }:
 
 # Comprehensive test suite for action conditions
 # Tests all condition types, bash expressions, and edge cases
@@ -9,7 +9,7 @@ platform.mkWorkflow {
   jobs = {
     # Test 1: success() condition - default behavior
     test-success-condition = {
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [
         {
@@ -31,7 +31,7 @@ platform.mkWorkflow {
     
     # Test 2: failure() condition - runs only after failure
     test-failure-condition = {
-      executor = platform.executors.local;
+      inherit executor;
       needs = ["test-success-condition"];
       continueOnError = true;
       
@@ -63,7 +63,7 @@ platform.mkWorkflow {
     
     # Test 3: always() condition - runs regardless of previous failures
     test-always-condition = {
-      executor = platform.executors.local;
+      inherit executor;
       needs = ["test-failure-condition"];
       continueOnError = true;
       
@@ -94,7 +94,7 @@ platform.mkWorkflow {
     
     # Test 4: Bash condition with environment variables
     test-bash-env-conditions = {
-      executor = platform.executors.local;
+      inherit executor;
       needs = ["test-always-condition"];
       
       env = {
@@ -139,7 +139,7 @@ platform.mkWorkflow {
     
     # Test 5: Complex bash conditions with operators
     test-complex-bash-conditions = {
-      executor = platform.executors.local;
+      inherit executor;
       needs = ["test-bash-env-conditions"];
       
       env = {
@@ -182,7 +182,7 @@ platform.mkWorkflow {
     
     # Test 6: Condition with AND/OR logic
     test-logical-conditions = {
-      executor = platform.executors.local;
+      inherit executor;
       needs = ["test-complex-bash-conditions"];
       
       env = {
@@ -226,7 +226,7 @@ platform.mkWorkflow {
     
     # Test 7: Condition with command substitution
     test-command-substitution-conditions = {
-      executor = platform.executors.local;
+      inherit executor;
       needs = ["test-logical-conditions"];
       
       actions = [
@@ -250,7 +250,7 @@ platform.mkWorkflow {
     
     # Test 8: Mixed conditions in sequence
     test-mixed-condition-sequence = {
-      executor = platform.executors.local;
+      inherit executor;
       needs = ["test-command-substitution-conditions"];
       continueOnError = true;
       
@@ -293,7 +293,7 @@ platform.mkWorkflow {
     
     # Test 9: Empty/unset variable conditions
     test-empty-variable-conditions = {
-      executor = platform.executors.local;
+      inherit executor;
       needs = ["test-mixed-condition-sequence"];
       
       env = {
@@ -330,7 +330,7 @@ platform.mkWorkflow {
     
     # Test 10: Condition evaluation order
     test-condition-evaluation-order = {
-      executor = platform.executors.local;
+      inherit executor;
       needs = ["test-empty-variable-conditions"];
       continueOnError = true;
       

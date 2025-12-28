@@ -1,4 +1,4 @@
-{ pkgs, platform }:
+{ pkgs, platform, executor ? platform.executors.local }:
 
 # Real-world Node.js CI/CD Pipeline
 #
@@ -7,15 +7,14 @@
 # - Multi-stage pipeline (lint → test → build → deploy)
 # - Artifacts (dist files passed between jobs)
 # - Conditions (deploy only on main branch)
-# - Different executors (local for fast tasks, OCI for isolated builds)
 # - Retry on flaky steps
 #
 # Usage:
 #   # Run full pipeline locally
-#   nix run .#example-nodejs-full-pipeline
+#   nix run .#example-nodejs-full-pipeline-local
 #
 #   # Deploy to production (requires BRANCH=main)
-#   BRANCH=main DEPLOY_KEY=xxx nix run .#example-nodejs-full-pipeline
+#   BRANCH=main DEPLOY_KEY=xxx nix run .#example-nodejs-full-pipeline-local
 
 platform.mkWorkflow {
   name = "nodejs-ci-cd";
@@ -39,7 +38,7 @@ platform.mkWorkflow {
     # ============================================
     
     lint = {
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [
         {
@@ -63,7 +62,7 @@ platform.mkWorkflow {
     };
     
     typecheck = {
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [
         {
@@ -92,7 +91,7 @@ platform.mkWorkflow {
     
     test = {
       needs = ["lint" "typecheck"];
-      executor = platform.executors.local;
+      inherit executor;
       
       # Test output for coverage
       outputs = {
@@ -134,7 +133,7 @@ platform.mkWorkflow {
     
     build = {
       needs = ["test"];
-      executor = platform.executors.local;
+      inherit executor;
       
       # Restore coverage for analysis
       inputs = [
@@ -181,7 +180,7 @@ platform.mkWorkflow {
     
     deploy-staging = {
       needs = ["build"];
-      executor = platform.executors.local;
+      inherit executor;
       
       # Only deploy if NOT main branch
       condition = ''[ "$BRANCH" != "main" ]'';
@@ -210,7 +209,7 @@ platform.mkWorkflow {
     
     deploy-production = {
       needs = ["build"];
-      executor = platform.executors.local;
+      inherit executor;
       
       # Only deploy on main branch
       condition = ''[ "$BRANCH" = "main" ]'';
@@ -253,7 +252,7 @@ platform.mkWorkflow {
     notify-success = {
       needs = ["deploy-staging" "deploy-production"];
       condition = "success()";
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [
         {
@@ -284,7 +283,7 @@ platform.mkWorkflow {
     notify-failure = {
       needs = ["deploy-staging" "deploy-production"];
       condition = "failure()";
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [
         {

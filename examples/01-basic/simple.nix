@@ -1,5 +1,5 @@
 # Simple workflow example - basic sequential job execution
-{ pkgs, platform }:
+{ pkgs, platform, executor ? platform.executors.local }:
 
 platform.mkWorkflow {
   name = "simple-workflow";
@@ -7,7 +7,7 @@ platform.mkWorkflow {
   jobs = {
     # Single job with a few actions
     hello = {
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [
         platform.actions.checkout

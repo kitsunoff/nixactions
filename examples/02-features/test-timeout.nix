@@ -1,4 +1,4 @@
-{ pkgs, platform }:
+{ pkgs, platform, executor ? platform.executors.local }:
 
 # Test: Timeout Support
 #
@@ -18,7 +18,7 @@ platform.mkWorkflow {
   jobs = {
     # Test 1: Fast action (should complete before timeout)
     test-fast-action = {
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [
         {
@@ -36,7 +36,7 @@ platform.mkWorkflow {
     # Test 2: Slow action (should timeout)
     test-timeout-action = {
       needs = ["test-fast-action"];
-      executor = platform.executors.local;
+      inherit executor;
       
       # Job continues even if action times out
       continueOnError = true;
@@ -66,7 +66,7 @@ platform.mkWorkflow {
     # Test 3: Job-level timeout override
     test-job-timeout = {
       needs = ["test-timeout-action"];
-      executor = platform.executors.local;
+      inherit executor;
       
       # Job-level timeout overrides workflow timeout
       timeout = "5s";
@@ -87,7 +87,7 @@ platform.mkWorkflow {
     # Test 4: No timeout (null timeout)
     test-no-timeout = {
       needs = ["test-job-timeout"];
-      executor = platform.executors.local;
+      inherit executor;
       
       # Override workflow timeout with null (no timeout)
       timeout = null;
@@ -107,7 +107,7 @@ platform.mkWorkflow {
     # Test 5: Different timeout formats
     test-timeout-formats = {
       needs = ["test-no-timeout"];
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [
         {

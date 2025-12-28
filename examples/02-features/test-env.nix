@@ -1,6 +1,6 @@
 # Test: Variable propagation between actions
 # Shows the difference between regular vars, local, and export
-{ pkgs, platform }:
+{ pkgs, platform, executor ? platform.executors.local }:
 
 platform.mkWorkflow {
   name = "test-env-propagation";
@@ -8,7 +8,7 @@ platform.mkWorkflow {
   jobs = {
     # Test 1: Regular variables (no local, no export)
     test-regular-vars = {
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [
         {
@@ -39,7 +39,7 @@ platform.mkWorkflow {
     # Test 2: local variables
     test-local-vars = {
       needs = [ "test-regular-vars" ];
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [
         {
@@ -71,7 +71,7 @@ platform.mkWorkflow {
     # Test 3: export variables (for subprocesses)
     test-export-vars = {
       needs = [ "test-local-vars" ];
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [
         {
@@ -99,7 +99,7 @@ platform.mkWorkflow {
     # Summary
     summary = {
       needs = [ "test-export-vars" ];
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [{
         name = "summary";

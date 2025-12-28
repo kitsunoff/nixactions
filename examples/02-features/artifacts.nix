@@ -6,9 +6,11 @@
 # 3. Mixed syntax (simple + custom)
 #
 # Usage:
-#   nix run .#example-artifacts
+#   nix run .#example-artifacts-local
+#   nix run .#example-artifacts-oci-shared
+#   nix run .#example-artifacts-oci-isolated
 
-{ pkgs, platform }:
+{ pkgs, platform, executor ? platform.executors.local }:
 
 platform.mkWorkflow {
   name = "artifacts-demo";
@@ -16,7 +18,7 @@ platform.mkWorkflow {
   jobs = {
     # Build job - creates multiple artifacts
     build = {
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [
         {
@@ -56,7 +58,7 @@ platform.mkWorkflow {
     
     # Test 1: Default restore (backward compatibility)
     test-default = {
-      executor = platform.executors.local;
+      inherit executor;
       needs = ["build"];
       
       # Simple strings - restore to root (default)
@@ -91,7 +93,7 @@ platform.mkWorkflow {
     
     # Test 2: Custom restore paths
     test-custom = {
-      executor = platform.executors.local;
+      inherit executor;
       needs = ["build"];
       
       # Custom paths - restore to specific directories
@@ -129,7 +131,7 @@ platform.mkWorkflow {
     
     # Test 3: Mixed syntax (simple + custom)
     test-mixed = {
-      executor = platform.executors.local;
+      inherit executor;
       needs = ["build"];
       
       # Mix simple strings and custom paths
@@ -169,7 +171,7 @@ platform.mkWorkflow {
     
     # Final validation - use all artifacts
     validate = {
-      executor = platform.executors.local;
+      inherit executor;
       needs = ["test-default" "test-custom" "test-mixed"];
       
       inputs = [

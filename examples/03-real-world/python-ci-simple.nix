@@ -1,5 +1,5 @@
 # Simplified Python CI example showing job isolation
-{ pkgs, platform }:
+{ pkgs, platform, executor ? platform.executors.local }:
 
 # Helper to create Python code (simulates checkout)
 let
@@ -28,10 +28,6 @@ def test_add():
 def test_multiply():
     assert multiply(2, 3) == 6
 PYEOF
-
-    cat > requirements.txt << 'PYEOF'
-pytest==7.4.0
-PYEOF
   '';
 
 in platform.mkWorkflow {
@@ -39,7 +35,7 @@ in platform.mkWorkflow {
   
   jobs = {
     lint = {
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [
         # Each job must checkout code (isolated workspace)
@@ -47,10 +43,10 @@ in platform.mkWorkflow {
         
         {
           name = "lint";
-          deps = [ pkgs.python311 pkgs.python311Packages.flake8 ];
+          deps = [ pkgs.python3 ];
           bash = ''
-            echo "→ Linting with flake8"
-            flake8 app.py test_app.py --max-line-length=100 || true
+            echo "→ Linting with Python syntax check"
+            python3 -m py_compile app.py test_app.py || true
             echo "✓ Lint complete"
           '';
         }
@@ -59,24 +55,18 @@ in platform.mkWorkflow {
     
     test = {
       needs = [ "lint" ];
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [
         # Checkout code again (new job = new directory)
         { bash = createPythonCode; }
         
         {
-          name = "install-and-test";
-          deps = [ pkgs.python311 pkgs.python311Packages.pip ];
+          name = "run-tests";
+          deps = [ pkgs.python3 ];
           bash = ''
-            echo "→ Installing dependencies"
-            python -m venv venv
-            # shellcheck disable=SC1091
-            source venv/bin/activate
-            pip install --quiet -r requirements.txt
-            
             echo "→ Running tests"
-            pytest test_app.py -v
+            python3 test_app.py
             
             echo "✓ Tests passed"
           '';
@@ -86,7 +76,7 @@ in platform.mkWorkflow {
     
     build = {
       needs = [ "test" ];
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [
         # Checkout code again

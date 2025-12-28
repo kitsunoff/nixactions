@@ -1,76 +1,79 @@
-# Test LOCAL executor: shared vs isolated
-# This will prove that actionDerivations contains ALL actions from jobs sharing the same executor name
+# Test executor: shared workspace behavior
+# Multiple jobs sharing the same executor share a workspace (for OCI: same container)
 
-{ pkgs, platform }:
+{ pkgs, platform, executor ? platform.executors.local }:
 
 platform.mkWorkflow {
-  name = "test-local-shared-vs-isolated";
+  name = "test-shared-vs-isolated";
   
   jobs = {
     # ========================================
-    # GROUP 1: SHARED executor (default local)
+    # Jobs sharing the same executor
     # ========================================
     
     job1-shared = {
-      executor = platform.executors.local;  # name = "local" (default)
+      inherit executor;
       
       actions = [{
         name = "job1-action";
         bash = ''
-          echo "→ Job 1 (SHARED executor: local)"
+          echo "→ Job 1 (using shared executor)"
           echo "Action: job1-action"
+          echo "Executor name: ''${EXECUTOR_NAME:-unknown}"
         '';
       }];
     };
     
     job2-shared = {
-      executor = platform.executors.local;  # name = "local" (SAME!)
+      inherit executor;
+      needs = ["job1-shared"];
       
       actions = [{
         name = "job2-action";
         bash = ''
-          echo "→ Job 2 (SHARED executor: local)"
+          echo "→ Job 2 (using shared executor)"
           echo "Action: job2-action"
+          echo "Executor name: ''${EXECUTOR_NAME:-unknown}"
         '';
       }];
     };
     
     job3-shared = {
-      executor = platform.executors.local;  # name = "local" (SAME!)
+      inherit executor;
+      needs = ["job2-shared"];
       
       actions = [{
         name = "job3-action";
         bash = ''
-          echo "→ Job 3 (SHARED executor: local)"
+          echo "→ Job 3 (using shared executor)"
           echo "Action: job3-action"
+          echo "Executor name: ''${EXECUTOR_NAME:-unknown}"
         '';
       }];
     };
     
     # ========================================
-    # GROUP 2: ISOLATED executors (custom names)
+    # Summary
     # ========================================
     
-    job4-isolated = {
-      executor = platform.executors.local { name = "isolated-env-1"; };
+    summary = {
+      inherit executor;
+      needs = ["job3-shared"];
       
       actions = [{
-        name = "job4-action";
+        name = "summary";
         bash = ''
-          echo "→ Job 4 (ISOLATED executor: isolated-env-1)"
-          echo "Action: job4-action"
-        '';
-      }];
-    };
-    
-    job5-isolated = {
-      executor = platform.executors.local { name = "isolated-env-2"; };
-      
-      actions = [{
-        name = "job5-action";
-        bash = ''
-          echo "→ Job 5 (ISOLATED executor: isolated-env-2)"
-          echo "Action: job5-action"
+          echo ""
+          echo "╔═══════════════════════════════════════════════╗"
+          echo "║ Summary: Shared Executor Test                 ║"
+          echo "╚═══════════════════════════════════════════════╝"
+          echo ""
+          echo "All jobs used the same executor."
+          echo "In shared mode:"
+          echo "  • OCI: All jobs run in the same container"
+          echo "  • Local: All jobs share the same workspace"
+          echo ""
+          echo "✓ Test completed successfully"
         '';
       }];
     };

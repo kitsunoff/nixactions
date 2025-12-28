@@ -1,4 +1,4 @@
-{ pkgs, platform }:
+{ pkgs, platform, executor ? platform.executors.local }:
 
 # Multi-Image Buildah Pipeline Example
 #
@@ -9,7 +9,7 @@ platform.mkWorkflow {
   name = "multi-image-pipeline";
   
   jobs = platform.jobs.buildahBuildPush {
-    executor = platform.executors.local;
+    inherit executor;
     
     # Job naming
     jobPrefix = "multi-";

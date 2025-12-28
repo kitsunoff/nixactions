@@ -1,12 +1,12 @@
 # Artifacts with nested paths example
-{ pkgs, platform }:
+{ pkgs, platform, executor ? platform.executors.local }:
 
 platform.mkWorkflow {
   name = "artifacts-paths";
   
   jobs = {
     build = {
-      executor = platform.executors.local;
+      inherit executor;
       
       outputs = {
         # Nested paths - should preserve structure
@@ -40,7 +40,7 @@ platform.mkWorkflow {
     };
     
     test = {
-      executor = platform.executors.local;
+      inherit executor;
       needs = ["build"];
       
       inputs = ["release-binary" "build-artifacts"];

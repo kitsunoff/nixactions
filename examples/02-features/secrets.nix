@@ -1,5 +1,5 @@
 # Secrets management example - demonstrates environment variables and validation
-{ pkgs, platform }:
+{ pkgs, platform, executor ? platform.executors.local }:
 
 platform.mkWorkflow {
   name = "secrets-workflow";
@@ -13,7 +13,7 @@ platform.mkWorkflow {
   jobs = {
     # Demonstrate environment variable usage
     validate-env = {
-      executor = platform.executors.local;
+      inherit executor;
       
       # Job-level environment
       env = {
@@ -47,7 +47,7 @@ platform.mkWorkflow {
     # Demonstrate runtime environment override
     use-runtime-env = {
       needs = [ "validate-env" ];
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [
         {
@@ -76,7 +76,7 @@ platform.mkWorkflow {
     # Demonstrate action-level environment override
     override-env = {
       needs = [ "use-runtime-env" ];
-      executor = platform.executors.local;
+      inherit executor;
       
       # Job environment
       env = {
@@ -114,7 +114,7 @@ platform.mkWorkflow {
     # Example: How secrets would be used in deployment
     deploy-with-secrets = {
       needs = [ "override-env" ];
-      executor = platform.executors.local;
+      inherit executor;
       
       # Job-level environment for this deployment
       env = {
@@ -155,7 +155,7 @@ platform.mkWorkflow {
     report = {
       needs = [ "deploy-with-secrets" ];
       "if" = "always()";
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [{
         name = "secrets-demo-report";

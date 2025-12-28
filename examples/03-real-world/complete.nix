@@ -1,5 +1,5 @@
 # Complete workflow example - demonstrates all major features
-{ pkgs, platform }:
+{ pkgs, platform, executor ? platform.executors.local }:
 
 platform.mkWorkflow {
   name = "complete-ci-pipeline";
@@ -14,7 +14,7 @@ platform.mkWorkflow {
     # === Level 0: Parallel initial checks ===
     
     lint = {
-      executor = platform.executors.local;
+      inherit executor;
       
       # Job-level environment
       env = {
@@ -36,7 +36,7 @@ platform.mkWorkflow {
     };
     
     security = {
-      executor = platform.executors.local;
+      inherit executor;
       
       # This job can fail without stopping the workflow
       continueOnError = true;
@@ -59,7 +59,7 @@ platform.mkWorkflow {
     };
     
     validate = {
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [{
         name = "validate-structure";
@@ -84,7 +84,7 @@ platform.mkWorkflow {
     
     test = {
       needs = [ "lint" "validate" ];
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [
         {
@@ -106,7 +106,7 @@ platform.mkWorkflow {
     
     build = {
       needs = [ "test" ];
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [
         {
@@ -137,7 +137,7 @@ platform.mkWorkflow {
     deploy = {
       needs = [ "build" ];
       "if" = "success()";
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [{
         name = "deploy-to-staging";
@@ -154,7 +154,7 @@ platform.mkWorkflow {
     notify-success = {
       needs = [ "build" ];
       "if" = "success()";
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [{
         name = "notify-success";
@@ -170,7 +170,7 @@ platform.mkWorkflow {
     notify-failure = {
       needs = [ "build" ];
       "if" = "failure()";
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [{
         name = "notify-failure";
@@ -188,7 +188,7 @@ platform.mkWorkflow {
     cleanup = {
       needs = [ "deploy" "notify-success" "notify-failure" ];
       "if" = "always()";
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [{
         name = "cleanup-resources";

@@ -1,4 +1,4 @@
-{ pkgs, platform }:
+{ pkgs, platform, executor ? platform.executors.local }:
 
 # Buildah Container Build Pipeline Example
 #
@@ -17,7 +17,7 @@ platform.mkWorkflow {
   name = "buildah-pipeline";
   
   jobs = platform.jobs.buildahBuildPush {
-    executor = platform.executors.local;
+    inherit executor;
     
     # Job naming
     jobPrefix = "container-";  # Creates: container-build, container-test, container-push

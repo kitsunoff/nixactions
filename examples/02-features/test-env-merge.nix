@@ -1,4 +1,4 @@
-{ pkgs, platform }:
+{ pkgs, platform, executor ? platform.executors.local }:
 
 # Test: Environment Variable Merging
 #
@@ -29,7 +29,7 @@ platform.mkWorkflow {
   
   jobs = {
     test-merge = {
-      executor = platform.executors.local;
+      inherit executor;
       
       # Level 2: Job-level environment (overrides workflow)
       env = {
@@ -129,7 +129,7 @@ platform.mkWorkflow {
     # Second job to verify workflow env is shared
     verify-workflow-env = {
       needs = ["test-merge"];
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [
         {
@@ -159,7 +159,7 @@ platform.mkWorkflow {
     # Summary
     summary = {
       needs = ["verify-workflow-env"];
-      executor = platform.executors.local;
+      inherit executor;
       condition = "always()";
       
       actions = [

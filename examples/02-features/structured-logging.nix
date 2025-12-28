@@ -1,4 +1,4 @@
-{ pkgs, platform }:
+{ pkgs, platform, executor ? platform.executors.local }:
 
 platform.mkWorkflow {
   name = "structured-logging-demo";
@@ -11,7 +11,7 @@ platform.mkWorkflow {
   
   jobs = {
     test = {
-      executor = platform.executors.local;
+      inherit executor;
       
       actions = [
         {

@@ -1,4 +1,4 @@
-{ pkgs, platform }:
+{ pkgs, platform, executor ? platform.executors.local }:
 
 platform.mkWorkflow {
   name = "example-retry";
@@ -14,7 +14,7 @@ platform.mkWorkflow {
   jobs = {
     # Test different retry scenarios
     test-exponential = {
-      executor = platform.executors.local;
+      inherit executor;
       
       # Override job-level retry
       retry = {
@@ -56,7 +56,7 @@ platform.mkWorkflow {
     };
     
     test-linear = {
-      executor = platform.executors.local;
+      inherit executor;
       needs = ["test-exponential"];
       
       actions = [
@@ -95,7 +95,7 @@ platform.mkWorkflow {
     };
     
     test-constant = {
-      executor = platform.executors.local;
+      inherit executor;
       needs = ["test-linear"];
       
       actions = [
@@ -134,7 +134,7 @@ platform.mkWorkflow {
     };
     
     test-no-retry = {
-      executor = platform.executors.local;
+      inherit executor;
       needs = ["test-constant"];
       
       # Disable retry for this job
@@ -152,7 +152,7 @@ platform.mkWorkflow {
     };
     
     test-max-attempts-one = {
-      executor = platform.executors.local;
+      inherit executor;
       needs = ["test-no-retry"];
       
       actions = [
