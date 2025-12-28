@@ -3216,198 +3216,119 @@ executor = platform.executors.local { name = "isolated-local"; }
 
 ### Executor: OCI
 
-The OCI executor runs each job in a separate Docker container with volume mounts.
+The OCI executor runs jobs in Docker containers with images built via `pkgs.dockerTools.buildLayeredImage`. No external images required - all derivations are included in the image.
 
 **Key features:**
-- **Per-job containers**: Each job gets its own container (not shared workspace container)
-- **Host volume mount**: Job directory on host is mounted to `/workspace` in container
-- **Nix store mount**: `/nix/store` mounted read-only for action derivations
-- **Supports `copyRepo`**: Repository copied to host job directory (visible in container)
-- **Custom names**: Custom names create isolated workspaces
+- **Self-contained images**: Built from action derivations via `buildLayeredImage`
+- **Two modes**: `shared` (one container for all jobs) or `isolated` (container per job)
+- **Cross-platform**: Automatically builds Linux images on Darwin
+- **No /nix/store mount**: All derivations baked into image
+- **Volume mount for workspace only**: `/tmp/nixactions/$WORKFLOW_ID:/workspace`
 
-**Architecture:**
+**Architecture (Shared Mode):**
 ```
-Host:
-  /tmp/nixactions/$WORKFLOW_ID/oci-nixos_nix/
-    └─ jobs/
-       ├─ build/  ← mounted to container1:/workspace
-       ├─ test/   ← mounted to container2:/workspace
-       └─ deploy/ ← mounted to container3:/workspace
-
-Container:
-  /workspace/     ← Host job directory (read-write)
-  /nix/store/     ← Host nix store (read-only)
+setupWorkspace
+    │
+    ├─→ buildLayeredImage (all action derivations)
+    ├─→ docker load < image.tar.gz
+    └─→ docker run -d -v workspace:/workspace image
+          │
+          ├─→ setupJob(job1) → mkdir /workspace/jobs/job1
+          │   executeJob(job1) → docker exec
+          │   cleanupJob(job1) → (container stays)
+          │
+          └─→ setupJob(job2) → mkdir /workspace/jobs/job2
+              ...
+    │
+    v
+cleanupWorkspace → docker stop/rm
 ```
 
+**Architecture (Isolated Mode):**
+```
+setupWorkspace → mkdir workspace
+
+setupJob(job1)
+    ├─→ buildLayeredImage (job1 derivations only)
+    ├─→ docker load && docker run
+    │
+executeJob(job1) → docker exec
+    │
+cleanupJob(job1) → docker stop/rm
+
+setupJob(job2) → new container
+    ...
+```
+
+**Image contents:**
 ```nix
-# lib/executors/oci.nix
-{ pkgs, lib, mkExecutor }:
-
-{
-  image ? "nixos/nix",
-  copyRepo ? true,  # Copy repository to job directory
-  name ? null,      # Custom name (defaults to "oci-${sanitized-image}")
-}:
-
-let
-  # Sanitize image name for bash variable names
-  safeName = builtins.replaceStrings ["-" "/" ":"] ["_" "_" "_"] image;
+lpkgs.dockerTools.buildLayeredImage {
+  name = "nixactions-${executorName}";
+  tag = "latest";
   
-  # Use custom name if provided, otherwise auto-generate from image
-  executorName = if name != null then name else "oci-${safeName}";
-  sanitizedExecutorName = builtins.replaceStrings ["-" "/" ":"] ["_" "_" "_"] executorName;
-  
-  actionRunner = import ./action-runner.nix { inherit lib pkgs; };
-in
-
-mkExecutor {
-  inherit copyRepo;
-  name = executorName;
-  
-  # === WORKSPACE LEVEL ===
-  
-  # Setup workspace directory on host (called once at workflow start)
-  setupWorkspace = { actionDerivations }: ''
-    WORKSPACE_DIR_${sanitizedExecutorName}="/tmp/nixactions/$WORKFLOW_ID/${executorName}"
-    mkdir -p "$WORKSPACE_DIR_${sanitizedExecutorName}"
-    export WORKSPACE_DIR_${sanitizedExecutorName}
+  contents = [
+    # Base utilities (Linux)
+    lpkgs.bash lpkgs.coreutils lpkgs.findutils
+    lpkgs.gnugrep lpkgs.gnused lpkgs.gawk lpkgs.bc
     
-    _log_workflow executor "${executorName}" action_count "${toString (builtins.length actionDerivations)}" \
-      event "→" "Workspace created (${toString (builtins.length actionDerivations)} actions)"
-  '';
-  
-  # Cleanup workspace directory on host (called once at workflow end)
-  cleanupWorkspace = { actionDerivations }: ''
-    if [ -n "''${WORKSPACE_DIR_${sanitizedExecutorName}:-}" ] && [ -d "$WORKSPACE_DIR_${sanitizedExecutorName}" ]; then
-      if [ "''${NIXACTIONS_KEEP_WORKSPACE:-}" != "1" ]; then
-        _log_workflow executor "${executorName}" event "→" "Cleaning up workspace"
-        rm -rf "$WORKSPACE_DIR_${sanitizedExecutorName}"
-      else
-        _log_workflow executor "${executorName}" event "→" "Workspace preserved"
-      fi
-    fi
-  '';
-  
-  # === JOB LEVEL ===
-  
-  # Setup job: create directory, copy repo, start container
-  setupJob = { jobName, actionDerivations }: ''
-    # 1. Create job directory on host
-    JOB_DIR_HOST="$WORKSPACE_DIR_${sanitizedExecutorName}/jobs/${jobName}"
-    mkdir -p "$JOB_DIR_HOST"
+    # Runtime helpers
+    loggingHelpers retryHelpers runtimeHelpers timeoutHelpers
     
-    # 2. Copy repository to job directory (if copyRepo enabled)
-    if [ "${if copyRepo then "true" else "false"}" = "true" ]; then
-      _log_job "${jobName}" event "→" "Copying repository to job directory"
-      rsync -a --exclude='.git' --exclude='result*' --exclude='.direnv' "$PWD/" "$JOB_DIR_HOST/"
-      _log_job "${jobName}" event "✓" "Repository copied"
-    fi
-    
-    # 3. Start container for this job with mount
-    JOB_CONTAINER_${sanitizedExecutorName}_${jobName}=$(${pkgs.docker}/bin/docker run -d \
-      -v "$JOB_DIR_HOST:/workspace" \
-      -v /nix/store:/nix/store:ro \
-      -e WORKFLOW_NAME \
-      ${image} sleep infinity)
-    
-    export JOB_CONTAINER_${sanitizedExecutorName}_${jobName}
-    
-    _log_job "${jobName}" executor "${executorName}" container "$JOB_CONTAINER_${sanitizedExecutorName}_${jobName}" \
-      event "→" "Container started"
-  '';
-  
-  # Execute actions in container
-  executeJob = { jobName, actionDerivations, env }: ''
-    ${pkgs.docker}/bin/docker exec \
-      "$JOB_CONTAINER_${sanitizedExecutorName}_${jobName}" \
-      bash -c ${lib.escapeShellArg ''
-        set -uo pipefail
-        cd /workspace
-        
-        # Source helpers from /nix/store
-        source /nix/store/*-nixactions-logging/bin/nixactions-logging
-        source /nix/store/*-nixactions-retry/bin/nixactions-retry
-        source /nix/store/*-nixactions-runtime/bin/nixactions-runtime
-        
-        _log_job "${jobName}" executor "${executorName}" event "▶" "Job starting"
-        
-        # Set job-level environment
-        ${lib.concatStringsSep "\n" (
-          lib.mapAttrsToList (k: v: "export ${k}=${lib.escapeShellArg (toString v)}") env
-        )}
-        
-        # Execute actions using action-runner
-        ACTION_FAILED=false
-        ${lib.concatMapStringsSep "\n" (action: 
-          let actionName = action.passthru.name or (builtins.baseNameOf action);
-          in actionRunner.generateActionExecution {
-            inherit action jobName;
-            actionBinary = "${action}/bin/${lib.escapeShellArg actionName}";
-          }
-        ) actionDerivations}
-        
-        if [ "$ACTION_FAILED" = "true" ]; then
-          _log_job "${jobName}" event "✗" "Job failed"
-          exit 1
-        fi
-      ''}
-  '';
-  
-  # Cleanup job: stop and remove container
-  cleanupJob = { jobName }: ''
-    _log_job "${jobName}" event "→" "Stopping container"
-    ${pkgs.docker}/bin/docker stop "$JOB_CONTAINER_${sanitizedExecutorName}_${jobName}" >/dev/null 2>&1 || true
-    ${pkgs.docker}/bin/docker rm "$JOB_CONTAINER_${sanitizedExecutorName}_${jobName}" >/dev/null 2>&1 || true
-  '';
-  
-  # === ARTIFACTS ===
-  
-  # Save artifact (HOST: job directory already on host via mount)
-  saveArtifact = { name, path, jobName }: ''
-    JOB_DIR_HOST="$WORKSPACE_DIR_${sanitizedExecutorName}/jobs/${jobName}"
-    
-    if [ -e "$JOB_DIR_HOST/${path}" ]; then
-      rm -rf "$NIXACTIONS_ARTIFACTS_DIR/${name}"
-      mkdir -p "$NIXACTIONS_ARTIFACTS_DIR/${name}"
-      cp -r "$JOB_DIR_HOST/${path}" "$NIXACTIONS_ARTIFACTS_DIR/${name}/${path}"
-    else
-      _log_workflow artifact "${name}" event "✗" "Path not found: ${path}"
-      return 1
-    fi
-  '';
-  
-  # Restore artifact (HOST: copy to job directory, visible in container via mount)
-  restoreArtifact = { name, path ? ".", jobName }: ''
-    if [ -e "$NIXACTIONS_ARTIFACTS_DIR/${name}" ]; then
-      JOB_DIR_HOST="$WORKSPACE_DIR_${sanitizedExecutorName}/jobs/${jobName}"
-      
-      if [ "${path}" = "." ] || [ "${path}" = "./" ]; then
-        mkdir -p "$JOB_DIR_HOST"
-        cp -r "$NIXACTIONS_ARTIFACTS_DIR/${name}"/* "$JOB_DIR_HOST/"
-      else
-        mkdir -p "$JOB_DIR_HOST/${path}"
-        cp -r "$NIXACTIONS_ARTIFACTS_DIR/${name}"/* "$JOB_DIR_HOST/${path}/"
-      fi
-    else
-      _log_workflow artifact "${name}" event "✗" "Artifact not found"
-      return 1
-    fi
-  '';
+    # Action derivations (rebuilt for Linux)
+  ] ++ linuxActionDerivations ++ linuxExtraPackages;
 }
 ```
 
+**Cross-platform support:**
+
+| Host | Container | How |
+|------|-----------|-----|
+| `aarch64-darwin` | `aarch64-linux` | Uses `linuxPkgs` automatically |
+| `x86_64-darwin` | `x86_64-linux` | Uses `linuxPkgs` automatically |
+| Linux | Same arch | Uses same `pkgs` |
+
 **Usage:**
 ```nix
-# Default (image = "nixos/nix", copyRepo = true)
-executor = platform.executors.oci { image = "node:20"; }
+# Shared mode (default) - one container for all jobs
+executor = platform.executors.oci {
+  mode = "shared";
+  copyRepo = true;
+}
 
-# Without repo copy
-executor = platform.executors.oci { image = "alpine:3.19"; copyRepo = false; }
+# Isolated mode - container per job  
+executor = platform.executors.oci {
+  mode = "isolated";
+  copyRepo = false;
+}
 
-# Custom name (creates separate workspace even with same image)
-executor = platform.executors.oci { image = "nixos/nix"; name = "build-env"; }
-executor = platform.executors.oci { image = "nixos/nix"; name = "test-env"; }
+# With extra packages (use linuxPkgs for cross-platform!)
+executor = platform.executors.oci {
+  extraPackages = [ platform.linuxPkgs.git platform.linuxPkgs.curl ];
+}
+
+# Custom name, mounts, env
+executor = platform.executors.oci {
+  name = "build-env";
+  extraMounts = [ "/data:/data:ro" ];
+  containerEnv = { CI = "true"; };
+}
 ```
+
+**API:**
+```nix
+platform.executors.oci {
+  name = "oci";           # Executor name (default: "oci")
+  mode = "shared";        # "shared" or "isolated"
+  copyRepo = true;        # Copy repo to job directory
+  extraPackages = [];     # Additional packages (use platform.linuxPkgs!)
+  extraMounts = [];       # Additional volume mounts
+  containerEnv = {};      # Container environment variables
+}
+```
+
+**Requirements:**
+- Docker daemon running
+- For Darwin: Linux builder configured (`nix.linux-builder.enable = true`)
 
 ---
 
@@ -3914,7 +3835,7 @@ cat result/bin/test-shared-executor | grep "Workspace created"
 
 ### Phase 2: Remote Executors ⏳
 
-- ⏳ OCI executor with provisioning
+- ✅ OCI executor with `buildLayeredImage` (shared/isolated modes)
 - ⏳ SSH executor with nix-copy-closure
 - ⏳ K8s executor
 - ✅ Artifacts (inputs/outputs)

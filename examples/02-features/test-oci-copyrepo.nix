@@ -1,14 +1,16 @@
 # Test OCI executor with copyRepo
+# Uses buildLayeredImage - no external image required!
 { pkgs, platform }:
 
 platform.mkWorkflow {
   name = "test-oci-copyrepo";
   
   jobs = {
-    # Test with copyRepo enabled (default)
+    # Test with copyRepo enabled (default) - shared mode
     with-copy = {
       executor = platform.executors.oci { 
-        image = "nixos/nix";
+        name = "oci-shared";
+        mode = "shared";
         copyRepo = true;
       };
       
@@ -16,7 +18,7 @@ platform.mkWorkflow {
         {
           name = "check-files";
           bash = ''
-            echo "Testing OCI executor with copyRepo=true"
+            echo "Testing OCI executor with copyRepo=true (shared mode)"
             echo "Current directory: $PWD"
             ls -la
             
@@ -32,10 +34,11 @@ platform.mkWorkflow {
       ];
     };
     
-    # Test with copyRepo disabled
+    # Test with copyRepo disabled - isolated mode
     without-copy = {
       executor = platform.executors.oci { 
-        image = "nixos/nix";
+        name = "oci-isolated";
+        mode = "isolated";
         copyRepo = false;
       };
       
@@ -43,7 +46,7 @@ platform.mkWorkflow {
         {
           name = "check-no-files";
           bash = ''
-            echo "Testing OCI executor with copyRepo=false"
+            echo "Testing OCI executor with copyRepo=false (isolated mode)"
             echo "Current directory: $PWD"
             ls -la
             
