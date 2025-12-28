@@ -85,7 +85,7 @@ pkgs.writeScriptBin "nixactions-local-executor" ''
     
     if [ -d "$workspace_dir" ]; then
       if [ "''${NIXACTIONS_KEEP_WORKSPACE:-}" != "1" ]; then
-        echo "→ Cleaning up local workspace: $workspace_dir"
+        echo "→ Cleaning up local workspace: $workspace_dir" >&2
         rm -rf "$workspace_dir"
       else
         _log_workflow executor "local" workspace "$workspace_dir" event "→" "Workspace preserved"

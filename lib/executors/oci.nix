@@ -188,7 +188,7 @@ makeConfigurable {
           
           # Load OCI image (pre-built at nix build time)
           _log_workflow executor "${executorName}" event "→" "Loading OCI image"
-          ${pkgs.gzip}/bin/zcat ${image.imageTarball} | ${pkgs.docker}/bin/docker load
+          ${pkgs.gzip}/bin/zcat ${image.imageTarball} | ${pkgs.docker}/bin/docker load >&2
           
           # Start container with workspace mount
           CONTAINER_ID_${sanitizedExecutorName}=$(${pkgs.docker}/bin/docker run -d \
@@ -319,7 +319,7 @@ makeConfigurable {
           
           # Load and start container for this job (pre-built at nix build time)
           _log_job "${jobName}" executor "${executorName}" event "→" "Loading job image"
-          ${pkgs.gzip}/bin/zcat ${jobImage.imageTarball} | ${pkgs.docker}/bin/docker load
+          ${pkgs.gzip}/bin/zcat ${jobImage.imageTarball} | ${pkgs.docker}/bin/docker load >&2
           
           JOB_CONTAINER_${sanitizedExecutorName}_${sanitizedJobName}=$(${pkgs.docker}/bin/docker run -d \
             -v "$JOB_DIR_HOST:/workspace" \
