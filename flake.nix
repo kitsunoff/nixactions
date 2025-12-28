@@ -28,8 +28,11 @@
               let
                 baseName = lib.removeSuffix ".nix" name;
                 isTest = lib.hasPrefix "test-" baseName;
+                # Skip k8s-specific examples (they don't work with local/oci executors)
+                isK8sOnly = lib.hasInfix "k8s" baseName;
               in
-              {
+              if isK8sOnly then null
+              else {
                 inherit baseName isTest;
                 category = subDir;
                 path = fullPath + "/${name}";
