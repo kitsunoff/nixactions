@@ -101,11 +101,18 @@ makeConfigurable {
           linuxAllDeps = lib.unique (lib.flatten (
             map (action: action.passthru.deps or []) linuxActionDerivations
           ));
+          # Generate unique tag based on content hash
+          # This prevents conflicts between different workflow images
+          contentForHash = builtins.concatStringsSep "\n" (
+            map toString (linuxActionDerivations ++ linuxAllDeps ++ linuxExtraPackages)
+          );
+          imageTag = builtins.substring 0 12 (builtins.hashString "sha256" contentForHash);
+          
           # Use streamLayeredImage to create a script that generates the image
           # Then wrap it to pre-build the tarball at nix build time
           streamScript = pkgs.dockerTools.streamLayeredImage {
             name = "nixactions-${executorName}";
-            tag = "latest";
+            tag = imageTag;
             
             # Architecture for the image
             architecture = if lpkgs.stdenv.hostPlatform.isAarch64 then "arm64" else "amd64";
@@ -151,8 +158,7 @@ makeConfigurable {
         # Return an attrset with image info and pre-built tarball
         {
           imageName = "nixactions-${executorName}";
-          imageTag = "latest";
-          inherit imageTarball;
+          inherit imageTag imageTarball;
         };
       
       # Generate docker run extra mount arguments
