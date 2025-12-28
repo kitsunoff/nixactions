@@ -46,13 +46,20 @@ makeConfigurable {
     '';
     
     # Execute job locally in isolated directory
-    executeJob = { jobName, actionDerivations, env }: ''
-      # Set job-level environment variables
+    executeJob = { jobName, actionDerivations, env, envFile ? null }: ''
+      # Source env providers file (workflow + job level)
+      # For local executor, this is already sourced at workflow level,
+      # but job-level providers need to be sourced here
+      if [ -n "''${${if envFile != null then envFile else "NIXACTIONS_JOB_ENV_FILE"}:-}" ] && \
+         [ -f "''${${if envFile != null then envFile else "NIXACTIONS_JOB_ENV_FILE"}}" ]; then
+        source "''${${if envFile != null then envFile else "NIXACTIONS_JOB_ENV_FILE"}}"
+      fi
+      
+      # Set static job-level environment variables (override providers)
       ${lib.concatStringsSep "\n" (
-        lib.mapAttrsToList (k: v: ''
-          if [ -z "''${${k}+x}" ]; then
-            export ${k}=${lib.escapeShellArg (toString v)}
-          fi'') env
+        lib.mapAttrsToList (k: v: 
+          "export ${k}=${lib.escapeShellArg (toString v)}"
+        ) env
       )}
       
       # Execute actions

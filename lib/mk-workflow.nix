@@ -198,14 +198,46 @@ let
       # Convert actions to derivations (if not already)
       actionDerivations = map (toActionDerivation jobRetry jobTimeout) job.actions;
       
-      # Job-level environment
+      # Job-level environment (static, from Nix)
       jobEnv = lib.attrsets.mergeAttrsList [ env (job.env or {}) ];
+      
+      # Job-level envFrom providers
+      jobEnvFrom = job.envFrom or [];
       
       # Normalize inputs to { name, path } format
       normalizedInputs = map normalizeInput (job.inputs or []);
       
     in ''
       job_${jobName}() {
+        # Create job-specific env file (starts with workflow-level providers)
+        NIXACTIONS_JOB_ENV_FILE="''${NIXACTIONS_ARTIFACTS_DIR}/../.env-job-${jobName}"
+        if [ -f "$NIXACTIONS_ENV_FILE" ]; then
+          cp "$NIXACTIONS_ENV_FILE" "$NIXACTIONS_JOB_ENV_FILE"
+        else
+          : > "$NIXACTIONS_JOB_ENV_FILE"
+        fi
+        chmod 600 "$NIXACTIONS_JOB_ENV_FILE"
+        export NIXACTIONS_JOB_ENV_FILE
+        
+        ${lib.optionalString (jobEnvFrom != []) ''
+        # Execute job-level envFrom providers
+        _log_job "${jobName}" event "→" "Loading job environment providers"
+        ${lib.concatMapStringsSep "\n" (provider: ''
+        _provider="${provider}/bin/$(ls ${provider}/bin | head -1)"
+        _provider_name=$(basename "$_provider")
+        _output=$("$_provider" 2>&1) || {
+          _log_job "${jobName}" provider "$_provider_name" event "✗" "Provider failed"
+          echo "$_output" >&2
+          exit 1
+        }
+        # Append valid exports to job env file
+        echo "$_output" | grep -E '^export[[:space:]]+[A-Za-z_][A-Za-z0-9_]*=' >> "$NIXACTIONS_JOB_ENV_FILE" || true
+        # Source after each provider so subsequent providers can see/validate these vars
+        source "$NIXACTIONS_JOB_ENV_FILE"
+        '') jobEnvFrom}
+        _log_job "${jobName}" event "✓" "Job environment loaded"
+        ''}
+        
         ${executor.setupJob { inherit jobName actionDerivations; }}
         ${lib.optionalString (normalizedInputs != []) ''
         # Restore artifacts
@@ -222,6 +254,7 @@ let
         ${executor.executeJob {
           inherit jobName actionDerivations;
           env = jobEnv;
+          envFile = "NIXACTIONS_JOB_ENV_FILE";  # Pass env file path variable name
         }}
         ${lib.optionalString ((job.outputs or {}) != {}) ''
         # Save artifacts
@@ -276,7 +309,16 @@ in (pkgs.writeScriptBin name ''
   # Environment Provider Execution
   # ============================================
   
-  # Helper: Execute provider and apply exports
+  # Environment file for provider variables (shared with executors)
+  NIXACTIONS_ENV_FILE="''${NIXACTIONS_ARTIFACTS_DIR}/../.env-providers"
+  mkdir -p "$(dirname "$NIXACTIONS_ENV_FILE")"
+  : > "$NIXACTIONS_ENV_FILE"  # Create/truncate file
+  chmod 600 "$NIXACTIONS_ENV_FILE"  # Secure permissions
+  export NIXACTIONS_ENV_FILE
+  
+  # Helper: Execute provider and write exports to file
+  # After writing, source the file so subsequent providers see the variables
+  # (e.g., "required" provider needs to validate that previous providers set vars)
   run_provider() {
     local provider=$1
     local provider_name=$(basename "$provider")
@@ -292,7 +334,7 @@ in (pkgs.writeScriptBin name ''
       exit $exit_code
     fi
     
-    # Apply exports - providers always override previous values
+    # Write valid exports to env file
     # Runtime environment (already in shell) has highest priority
     local vars_set=0
     local vars_from_runtime=0
@@ -302,17 +344,22 @@ in (pkgs.writeScriptBin name ''
         local key="''${BASH_REMATCH[1]}"
         
         # Check if variable was set from runtime (before provider execution started)
-        # We detect this by checking if it's in our RUNTIME_ENV_KEYS list
         if [[ " ''${RUNTIME_ENV_KEYS} " =~ " ''${key} " ]]; then
           # Runtime env has highest priority - skip
           vars_from_runtime=$((vars_from_runtime + 1))
         else
-          # Apply provider value (may override previous provider)
-          eval "$line"
+          # Write to env file
+          echo "$line" >> "$NIXACTIONS_ENV_FILE"
           vars_set=$((vars_set + 1))
         fi
       fi
     done <<< "$output"
+    
+    # Source env file so subsequent providers can see/validate these variables
+    # This is necessary for providers like "required" that check if vars are set
+    if [ -s "$NIXACTIONS_ENV_FILE" ]; then
+      source "$NIXACTIONS_ENV_FILE"
+    fi
     
     if [ $vars_set -gt 0 ]; then
       _log_workflow provider "$provider_name" vars_set "$vars_set" event "✓" "Variables loaded"

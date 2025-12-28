@@ -120,9 +120,10 @@
           # Convert to attribute set
           examplePackages = builtins.listToAttrs allVariants;
           
-          # K8s variants - only for test-k8s example (requires special setup)
+          # K8s variants - for test-k8s examples (requires special setup)
           k8sExecutorVariants = mkK8sExecutorVariants platform;
           
+          # Basic K8s test
           k8sExamples = lib.mapAttrs' (variantName: executor: {
             name = "example-test-k8s-${lib.removePrefix "k8s-" variantName}";
             value = import ./examples/02-features/test-k8s.nix {
@@ -130,8 +131,24 @@
             };
           }) k8sExecutorVariants;
           
+          # K8s matrix test (10 parallel jobs) - only dedicated mode makes sense
+          k8sMatrixExamples = {
+            "example-test-k8s-matrix-dedicated" = import ./examples/02-features/test-k8s-matrix.nix {
+              inherit pkgs platform;
+              executor = k8sExecutorVariants.k8s-dedicated;
+            };
+          };
+          
+          # K8s env providers test
+          k8sEnvProviderExamples = lib.mapAttrs' (variantName: executor: {
+            name = "example-test-k8s-env-providers-${lib.removePrefix "k8s-" variantName}";
+            value = import ./examples/02-features/test-k8s-env-providers.nix {
+              inherit pkgs platform executor;
+            };
+          }) k8sExecutorVariants;
+          
         in
-        examplePackages // k8sExamples // {
+        examplePackages // k8sExamples // k8sMatrixExamples // k8sEnvProviderExamples // {
           # Set default to complete-local example
           default = examplePackages."example-complete-local" or examplePackages."example-simple-local" or (builtins.head (builtins.attrValues examplePackages));
         }

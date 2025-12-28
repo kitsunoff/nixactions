@@ -48,13 +48,14 @@ NixActions v4.0 implements the core vision:
 - [ ] Pool mode (multiple hosts)
 - [ ] Dedicated mode (per-job connection)
 
-### Kubernetes Executor
+### Kubernetes Executor - COMPLETED
 
-- [ ] Pod creation/deletion
-- [ ] kubectl cp for artifacts
-- [ ] Environment via -e flags
-- [ ] Shared pod mode
-- [ ] PVC support for /nix/store
+- [x] Pod creation/deletion
+- [x] kubectl cp for artifacts
+- [x] Environment via -e flags
+- [x] Shared pod mode
+- [x] Dedicated pod mode
+- [ ] PVC support for /nix/store (future enhancement)
 
 ### NixOS VM Executor
 

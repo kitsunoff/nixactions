@@ -45,10 +45,11 @@ platform.mkWorkflow {
     ])
   ];
   
-  # Workflow env - lowest priority of all
+  # Workflow env - higher priority than workflow envFrom (providers)
+  # But lower priority than job env/envFrom
   env = {
     WORKFLOW_VAR = "from_workflow";
-    SHARED_VAR = "workflow_priority";  # Will be overridden
+    # NOTE: SHARED_VAR intentionally NOT set here to test provider priority
   };
   
   jobs = {
@@ -74,17 +75,18 @@ platform.mkWorkflow {
             echo "Workflow env:"
             echo "  WORKFLOW_VAR = $WORKFLOW_VAR"
             echo ""
-            echo "Priority test (should be 'file_priority'):"
+            echo "Priority test (file provider overrides static provider):"
             echo "  SHARED_VAR = $SHARED_VAR"
             echo ""
             
             # Validate priority system works
+            # File provider is executed after static provider, so it overrides
             if [ "$SHARED_VAR" != "file_priority" ]; then
-              echo "❌ Priority system broken! Expected 'file_priority', got '$SHARED_VAR'"
+              echo "FAIL: Expected 'file_priority' (file provider), got '$SHARED_VAR'"
               exit 1
             fi
             
-            echo "✓ Priority system working correctly"
+            echo "PASS: Provider order priority working correctly"
           '';
         }
       ];
@@ -111,14 +113,15 @@ platform.mkWorkflow {
       ];
     };
     
-    test-runtime-override = {
+    test-job-env-override = {
       needs = ["test-required"];
       inherit executor;
       
-      # Job-level env has higher priority than workflow env
+      # Job-level env has higher priority than workflow envFrom (providers)
+      # Per docs: Job env (5) > Job envFrom (6) > Workflow env (7) > Workflow envFrom (8)
       env = {
         JOB_VAR = "from_job";
-        SHARED_VAR = "should_be_file_priority";  # Providers already executed, won't override
+        SHARED_VAR = "job_override";  # This SHOULD override provider value
       };
       
       actions = [
@@ -127,14 +130,20 @@ platform.mkWorkflow {
           bash = ''
             echo "Job-level variables:"
             echo "  JOB_VAR = $JOB_VAR"
-            echo "  SHARED_VAR = $SHARED_VAR (should still be 'file_priority')"
+            echo "  SHARED_VAR = $SHARED_VAR (should be 'job_override')"
             
-            if [ "$SHARED_VAR" != "file_priority" ]; then
-              echo "❌ Job env should not override providers!"
+            if [ "$JOB_VAR" != "from_job" ]; then
+              echo "FAIL: JOB_VAR expected 'from_job', got '$JOB_VAR'"
               exit 1
             fi
             
-            echo "✓ Provider priority correctly enforced"
+            # Job env has higher priority than workflow providers
+            if [ "$SHARED_VAR" != "job_override" ]; then
+              echo "FAIL: Job env should override providers! Expected 'job_override', got '$SHARED_VAR'"
+              exit 1
+            fi
+            
+            echo "PASS: Job env correctly overrides providers"
           '';
         }
       ];

@@ -289,7 +289,7 @@ mkExecutor {
       _log_job "${jobName}" executor "${executorName}" workdir "/workspace" event "▶" "Job starting"
     '';
   
-  executeJob = { jobName, actionDerivations, env }:
+  executeJob = { jobName, actionDerivations, env, envFile ? null }:
     let
       sanitizedJobName = builtins.replaceStrings ["-" "/" ":" "."] ["_" "_" "_" "_"] jobName;
       podName = mkPodName "";
@@ -307,6 +307,28 @@ mkExecutor {
       # Rebuild actions for Linux
       linuxActionDerivations = buildLinuxActions actionDerivations;
     in ''
+      # === K8s: Transfer environment to pod ===
+      _K8S_ENV_FILE=$(mktemp)
+      trap "rm -f '$_K8S_ENV_FILE'" RETURN
+      
+      # Start with env providers file (workflow + job level)
+      if [ -n "''${${if envFile != null then envFile else "NIXACTIONS_ENV_FILE"}:-}" ] && \
+         [ -f "''${${if envFile != null then envFile else "NIXACTIONS_ENV_FILE"}}" ]; then
+        cp "''${${if envFile != null then envFile else "NIXACTIONS_ENV_FILE"}}" "$_K8S_ENV_FILE"
+      else
+        : > "$_K8S_ENV_FILE"
+      fi
+      
+      # Add static job-level env vars (these override providers)
+      ${lib.concatStringsSep "\n" (
+        lib.mapAttrsToList (k: v: 
+          ''echo "export ${k}=${lib.escapeShellArg (toString v)}" >> "$_K8S_ENV_FILE"''
+        ) env
+      )}
+      
+      # Copy env file to pod
+      ${kubectlBase} cp "$_K8S_ENV_FILE" ${namespace}/${podVar}:${workdir}/.nixactions-env >&2
+      
       # === K8s: Execute Job ===
       ${kubectl "exec"} --namespace=${namespace} ${podVar} -- \
         env WORKFLOW_NAME="$WORKFLOW_NAME" WORKFLOW_ID="$WORKFLOW_ID" NIXACTIONS_LOG_FORMAT="$NIXACTIONS_LOG_FORMAT" \
@@ -323,12 +345,10 @@ mkExecutor {
           touch "$JOB_ENV"
           export JOB_ENV
           
-          # Set job-level environment variables
-          ${lib.concatStringsSep "\n" (
-            lib.mapAttrsToList (k: v:
-              "export ${k}=${lib.escapeShellArg (toString v)}"
-            ) env
-          )}
+          # Load environment from providers file
+          if [ -f "${workdir}/.nixactions-env" ]; then
+            source "${workdir}/.nixactions-env"
+          fi
           
           ACTION_FAILED=false
           ${lib.concatMapStringsSep "\n" (action:

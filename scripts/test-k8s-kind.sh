@@ -7,7 +7,7 @@
 # 3. Cleans up
 #
 # Usage:
-#   ./scripts/test-k8s-kind.sh [shared|dedicated]
+#   ./scripts/test-k8s-kind.sh [shared|dedicated|matrix]
 
 set -euo pipefail
 
@@ -125,11 +125,18 @@ run_test() {
     export REGISTRY_PASSWORD="unused"
     
     # Run the example
-    if [ "$MODE" = "dedicated" ]; then
-        nix run ".#example-test-k8s-dedicated"
-    else
-        nix run ".#example-test-k8s-shared"
-    fi
+    case "$MODE" in
+        dedicated)
+            nix run ".#example-test-k8s-dedicated"
+            ;;
+        matrix)
+            log "Running matrix test with 10 parallel workers..."
+            nix run ".#example-test-k8s-matrix-dedicated"
+            ;;
+        *)
+            nix run ".#example-test-k8s-shared"
+            ;;
+    esac
     
     log "Test completed successfully!"
 }
