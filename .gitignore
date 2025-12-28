@@ -27,3 +27,4 @@ __pycache__/
 
 # NixActions runtime
 .nixactions/
+compiled-examples/
