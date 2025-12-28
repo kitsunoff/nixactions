@@ -101,8 +101,8 @@ makeConfigurable {
           linuxAllDeps = lib.unique (lib.flatten (
             map (action: action.passthru.deps or []) linuxActionDerivations
           ));
-          # Use host pkgs dockerTools for building (avoids cross-compilation issues)
-          # but Linux pkgs for container contents
+          # Use streamLayeredImage to create a script that generates the image
+          # Then wrap it to pre-build the tarball at nix build time
           streamScript = pkgs.dockerTools.streamLayeredImage {
             name = "nixactions-${executorName}";
             tag = "latest";
@@ -140,12 +140,19 @@ makeConfigurable {
               ] ++ (lib.mapAttrsToList (k: v: "${k}=${toString v}") containerEnv);
             };
           };
+          
+          # Pre-build the image tarball at nix build time (not runtime)
+          imageTarball = pkgs.runCommand "nixactions-${executorName}.tar.gz" {
+            nativeBuildInputs = [ pkgs.gzip ];
+          } ''
+            ${streamScript} | gzip > $out
+          '';
         in
-        # Return an attrset with image info and the stream script path
+        # Return an attrset with image info and pre-built tarball
         {
           imageName = "nixactions-${executorName}";
           imageTag = "latest";
-          inherit streamScript;
+          inherit imageTarball;
         };
       
       # Generate docker run extra mount arguments
@@ -173,9 +180,9 @@ makeConfigurable {
           
           _log_workflow executor "${executorName}" mode "shared" workspace "$WORKSPACE_DIR_${sanitizedExecutorName}" event "→" "Setting up OCI workspace"
           
-          # Load OCI image (built by Nix using streamLayeredImage)
+          # Load OCI image (pre-built at nix build time)
           _log_workflow executor "${executorName}" event "→" "Loading OCI image"
-          ${image.streamScript} | ${pkgs.docker}/bin/docker load
+          ${pkgs.gzip}/bin/zcat ${image.imageTarball} | ${pkgs.docker}/bin/docker load
           
           # Start container with workspace mount
           CONTAINER_ID_${sanitizedExecutorName}=$(${pkgs.docker}/bin/docker run -d \
@@ -304,9 +311,9 @@ makeConfigurable {
             _log_job "${jobName}" event "✓" "Repository copied"
           fi
           
-          # Load and start container for this job (using streamLayeredImage)
+          # Load and start container for this job (pre-built at nix build time)
           _log_job "${jobName}" executor "${executorName}" event "→" "Loading job image"
-          ${jobImage.streamScript} | ${pkgs.docker}/bin/docker load
+          ${pkgs.gzip}/bin/zcat ${jobImage.imageTarball} | ${pkgs.docker}/bin/docker load
           
           JOB_CONTAINER_${sanitizedExecutorName}_${sanitizedJobName}=$(${pkgs.docker}/bin/docker run -d \
             -v "$JOB_DIR_HOST:/workspace" \
