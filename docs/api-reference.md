@@ -39,12 +39,13 @@ nixactions :: {
 
 ```nix
 mkWorkflow :: {
-  name    :: String,
-  jobs    :: AttrSet Job,
-  env     :: AttrSet String = {},
-  envFrom :: [Derivation] = [],
-  retry   :: RetryConfig | Null = null,
-  timeout :: Int | Null = null,
+  name       :: String,
+  jobs       :: AttrSet Job,
+  env        :: AttrSet String = {},
+  envFrom    :: [Derivation] = [],
+  retry      :: RetryConfig | Null = null,
+  timeout    :: Int | Null = null,
+  extensions :: [Workflow -> Workflow] = [],  # Workflow transformers
 } -> Derivation
 ```
 
@@ -71,6 +72,37 @@ nixactions.mkWorkflow {
     test = { ... };
     build = { ... };
   };
+}
+```
+
+### Extensions
+
+Extensions are functions that transform the workflow config before compilation.
+They are applied left-to-right via `lib.pipe`.
+
+```nix
+# Validation extension
+validateNotEmpty = workflow:
+  assert builtins.length (builtins.attrNames workflow.jobs) > 0;
+  workflow;
+
+# Transform extension - add default timeout to all jobs
+addDefaultTimeout = workflow:
+  workflow // {
+    jobs = lib.mapAttrs (name: job:
+      job // { timeout = job.timeout or "10m"; }
+    ) workflow.jobs;
+  };
+
+nixactions.mkWorkflow {
+  name = "ci";
+  
+  extensions = [
+    validateNotEmpty
+    addDefaultTimeout
+  ];
+  
+  jobs = { ... };
 }
 ```
 

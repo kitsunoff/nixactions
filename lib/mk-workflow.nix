@@ -8,13 +8,22 @@
   logging ? {},  # { format = "structured"; level = "info"; }
   retry ? null,  # Workflow-level retry config
   timeout ? null,  # Workflow-level timeout (e.g., "30m", "1h", "120s")
+  extensions ? [],  # List of workflow transformers: workflow -> workflow
 }:
 
-assert lib.assertMsg (name != "") "Workflow name cannot be empty";
-assert lib.assertMsg (builtins.isAttrs jobs) "jobs must be an attribute set";
-assert lib.assertMsg (builtins.isList envFrom) "envFrom must be a list of provider derivations";
+# Apply extensions to raw workflow config
+let
+  rawWorkflow = { inherit name jobs env envFrom logging retry timeout; };
+  workflow = lib.pipe rawWorkflow extensions;
+in
+
+assert lib.assertMsg (workflow.name != "") "Workflow name cannot be empty";
+assert lib.assertMsg (builtins.isAttrs workflow.jobs) "jobs must be an attribute set";
+assert lib.assertMsg (builtins.isList workflow.envFrom) "envFrom must be a list of provider derivations";
 
 let
+  # Extract values from (possibly transformed) workflow
+  inherit (workflow) name jobs env envFrom logging retry timeout;
   # Import runtime libraries
   runtimeLibs = import ./runtime-libs { inherit pkgs lib; };
   loggingLib = runtimeLibs.logging;
