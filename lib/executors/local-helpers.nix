@@ -139,12 +139,13 @@ pkgs.writeScriptBin "nixactions-local-executor" ''
       # Determine target directory
       if [ "$target_path" = "." ] || [ "$target_path" = "./" ]; then
         # Restore to root of job directory (default behavior)
-        cp -r "$NIXACTIONS_ARTIFACTS_DIR/$name"/* "$JOB_DIR/" 2>/dev/null || true
+        # Use shopt dotglob to include hidden files (like .env-*)
+        (shopt -s dotglob && cp -r "$NIXACTIONS_ARTIFACTS_DIR/$name"/* "$JOB_DIR/" 2>/dev/null) || true
       else
         # Restore to custom path
         TARGET_DIR="$JOB_DIR/$target_path"
         mkdir -p "$TARGET_DIR"
-        cp -r "$NIXACTIONS_ARTIFACTS_DIR/$name"/* "$TARGET_DIR/" 2>/dev/null || true
+        (shopt -s dotglob && cp -r "$NIXACTIONS_ARTIFACTS_DIR/$name"/* "$TARGET_DIR/" 2>/dev/null) || true
       fi
       
       return 0

@@ -249,6 +249,11 @@ let
         _log_job "${jobName}" event "✓" "Job environment loaded"
         ''}
         
+        # Source job outputs from dependency jobs (SDK feature)
+        if [ -n "''${NIXACTIONS_JOB_OUTPUTS:-}" ] && [ -s "$NIXACTIONS_JOB_OUTPUTS" ]; then
+          source "$NIXACTIONS_JOB_OUTPUTS"
+        fi
+        
         ${executor.setupJob { inherit jobName actionDerivations; }}
         ${lib.optionalString (normalizedInputs != []) ''
         # Restore artifacts
@@ -329,6 +334,12 @@ in (pkgs.writeScriptBin name ''
   : > "$NIXACTIONS_ENV_FILE"  # Create/truncate file
   chmod 600 "$NIXACTIONS_ENV_FILE"  # Secure permissions
   export NIXACTIONS_ENV_FILE
+  
+  # Job outputs file for SDK typed jobs (persists OUTPUT_* between jobs)
+  NIXACTIONS_JOB_OUTPUTS="''${NIXACTIONS_ARTIFACTS_DIR}/../.job-outputs"
+  : > "$NIXACTIONS_JOB_OUTPUTS"  # Create/truncate file
+  chmod 600 "$NIXACTIONS_JOB_OUTPUTS"
+  export NIXACTIONS_JOB_OUTPUTS
   
   # Helper: Execute provider and write exports to file
   # After writing, source the file so subsequent providers see the variables

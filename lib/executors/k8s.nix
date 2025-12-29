@@ -455,12 +455,15 @@ mkExecutor {
           ${kubectl "exec"} --namespace=${namespace} ${podVar} -- mkdir -p "$TARGET_PATH" >&2
         fi
         
-        # Copy from host to pod
-        for item in "$NIXACTIONS_ARTIFACTS_DIR/${name}"/*; do
-          if [ -e "$item" ]; then
-            ${kubectlBase} cp "$item" ${namespace}/${podVar}:"$TARGET_PATH/" >&2
-          fi
-        done
+        # Copy from host to pod (use dotglob to include hidden files like .env-*)
+        (
+          shopt -s dotglob
+          for item in "$NIXACTIONS_ARTIFACTS_DIR/${name}"/*; do
+            if [ -e "$item" ]; then
+              ${kubectlBase} cp "$item" ${namespace}/${podVar}:"$TARGET_PATH/" >&2
+            fi
+          done
+        )
         
         _log_workflow artifact "${name}" event "✓" "Artifact restored"
       else

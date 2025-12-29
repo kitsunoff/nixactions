@@ -354,21 +354,29 @@ makeConfigurable {
             # Restore to root of job directory
             mkdir -p "$JOB_DIR_HOST"
             
-            for item in "$NIXACTIONS_ARTIFACTS_DIR/${name}"/*; do
-              if [ -e "$item" ]; then
-                cp -r "$item" "$JOB_DIR_HOST/"
-              fi
-            done
+            # Use shopt dotglob to include hidden files (like .env-*)
+            (
+              shopt -s dotglob
+              for item in "$NIXACTIONS_ARTIFACTS_DIR/${name}"/*; do
+                if [ -e "$item" ]; then
+                  cp -r "$item" "$JOB_DIR_HOST/"
+                fi
+              done
+            )
           else
             # Restore to custom path
             TARGET_DIR="$JOB_DIR_HOST/${path}"
             mkdir -p "$TARGET_DIR"
             
-            for item in "$NIXACTIONS_ARTIFACTS_DIR/${name}"/*; do
-              if [ -e "$item" ]; then
-                cp -r "$item" "$TARGET_DIR/"
-              fi
-            done
+            # Use shopt dotglob to include hidden files (like .env-*)
+            (
+              shopt -s dotglob
+              for item in "$NIXACTIONS_ARTIFACTS_DIR/${name}"/*; do
+                if [ -e "$item" ]; then
+                  cp -r "$item" "$TARGET_DIR/"
+                fi
+              done
+            )
           fi
         else
           _log_workflow artifact "${name}" event "✗" "Artifact not found"

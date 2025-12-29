@@ -21,9 +21,6 @@ let
   # Built-in executors
   executors = import ./executors/default.nix { inherit pkgs lib mkExecutor linuxPkgs; };
   
-  # Standard actions
-  actions = import ./actions/default.nix { inherit pkgs lib; };
-  
   # Job templates
   jobs = import ./jobs/default.nix { inherit pkgs lib actions; };
   
@@ -38,6 +35,12 @@ let
   
   # Retry utilities (re-export for backward compatibility)
   retry = runtimeLibs.retry;
+  
+  # SDK - typed actions with eval-time validation
+  sdk = import ./sdk { inherit lib; };
+  
+  # Standard actions (some use SDK)
+  actions = import ./actions/default.nix { inherit pkgs lib sdk; };
   
 in {
   # Export core constructors
@@ -60,6 +63,9 @@ in {
   
   # Export retry utilities
   inherit retry;
+  
+  # Export SDK for typed actions
+  inherit sdk;
   
   # Export linuxPkgs for OCI executor extraPackages
   # Use: nixactions.linuxPkgs.git instead of pkgs.git
