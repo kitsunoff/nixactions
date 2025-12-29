@@ -16,7 +16,7 @@
 #   REGISTRY_USER=unused REGISTRY_PASSWORD=unused nix run .#example-test-k8s-env-providers-dedicated
 
 { pkgs
-, platform
+, nixactions
 , executor  # K8s executor must be provided (requires registry config)
 }:
 
@@ -30,13 +30,13 @@ let
   '';
 in
 
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "k8s-env-providers-test";
   
   # Environment providers executed in order
   envFrom = [
     # 1. Static provider - lowest priority
-    (platform.envProviders.static {
+    (nixactions.envProviders.static {
       STATIC_VAR = "from_static";
       SHARED_VAR = "static_priority";
       CI = "true";
@@ -44,13 +44,13 @@ platform.mkWorkflow {
     })
     
     # 2. File provider - higher priority than static
-    (platform.envProviders.file {
+    (nixactions.envProviders.file {
       path = testEnvFile;
       required = false;
     })
     
     # 3. Required provider - validates vars are set
-    (platform.envProviders.required [
+    (nixactions.envProviders.required [
       "STATIC_VAR"
       "FILE_VAR"
       "DB_HOST"

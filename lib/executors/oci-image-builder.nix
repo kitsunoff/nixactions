@@ -7,11 +7,12 @@ let
   # Linux pkgs alias
   lpkgs = linuxPkgs;
   
-  # Import runtime helpers - use linuxPkgs for container content
-  loggingLib = import ../logging.nix { pkgs = linuxPkgs; inherit lib; };
-  retryLib = import ../retry.nix { pkgs = linuxPkgs; inherit lib; };
-  runtimeHelpers = import ../runtime-helpers.nix { pkgs = linuxPkgs; inherit lib; };
-  timeoutLib = import ../timeout.nix { pkgs = linuxPkgs; inherit lib; };
+  # Import runtime libraries - use linuxPkgs for container content
+  runtimeLibs = import ../runtime-libs { pkgs = linuxPkgs; inherit lib; };
+  loggingLib = runtimeLibs.logging;
+  retryLib = runtimeLibs.retry;
+  runtimeHelpers = runtimeLibs.runtimeHelpers;
+  timeoutLib = runtimeLibs.timeout;
   
   # Helper to convert a package from host system to Linux
   # Uses pname lookup in lpkgs, with explicit error if not found

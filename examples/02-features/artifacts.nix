@@ -10,9 +10,9 @@
 #   nix run .#example-artifacts-oci-shared
 #   nix run .#example-artifacts-oci-isolated
 
-{ pkgs, platform, executor ? platform.executors.local }:
+{ pkgs, nixactions, executor ? nixactions.executors.local }:
 
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "artifacts-demo";
   
   jobs = {

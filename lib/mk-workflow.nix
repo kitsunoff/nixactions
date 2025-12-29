@@ -15,17 +15,12 @@ assert lib.assertMsg (builtins.isAttrs jobs) "jobs must be an attribute set";
 assert lib.assertMsg (builtins.isList envFrom) "envFrom must be a list of provider derivations";
 
 let
-  # Import logging utilities
-  loggingLib = import ./logging.nix { inherit pkgs lib; };
-  
-  # Import retry utilities
-  retryLib = import ./retry.nix { inherit lib pkgs; };
-  
-  # Import timeout utilities
-  timeoutLib = import ./timeout.nix { inherit pkgs lib; };
-  
-  # Import runtime helpers (derivation)
-  runtimeHelpers = import ./runtime-helpers.nix { inherit pkgs lib; };
+  # Import runtime libraries
+  runtimeLibs = import ./runtime-libs { inherit pkgs lib; };
+  loggingLib = runtimeLibs.logging;
+  retryLib = runtimeLibs.retry;
+  timeoutLib = runtimeLibs.timeout;
+  runtimeHelpers = runtimeLibs.runtimeHelpers;
   
   # Create logger for this workflow
   logger = loggingLib.mkLogger {

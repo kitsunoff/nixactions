@@ -1,6 +1,6 @@
-{ pkgs, platform, executor ? platform.executors.local }:
+{ pkgs, nixactions, executor ? nixactions.executors.local }:
 
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "example-retry";
   
   # Workflow-level retry (applies to all jobs/actions unless overridden)

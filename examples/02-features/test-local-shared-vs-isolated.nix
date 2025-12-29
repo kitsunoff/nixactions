@@ -1,9 +1,9 @@
 # Test executor: shared workspace behavior
 # Multiple jobs sharing the same executor share a workspace (for OCI: same container)
 
-{ pkgs, platform, executor ? platform.executors.local }:
+{ pkgs, nixactions, executor ? nixactions.executors.local }:
 
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "test-shared-vs-isolated";
   
   jobs = {

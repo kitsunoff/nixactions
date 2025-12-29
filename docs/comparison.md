@@ -51,12 +51,12 @@ jobs:
 
 **NixActions:**
 ```nix
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "ci";
   
   jobs = {
     test = {
-      executor = platform.executors.local;
+      executor = nixactions.executors.local;
       actions = [
         { bash = "npm test"; deps = [ pkgs.nodejs ]; }
       ];
@@ -65,7 +65,7 @@ platform.mkWorkflow {
     deploy = {
       needs = [ "test" ];
       condition = ''[ "$GITHUB_REF" = "refs/heads/main" ]'';
-      executor = platform.executors.local;
+      executor = nixactions.executors.local;
       actions = [
         { bash = "deploy.sh"; }
       ];
@@ -110,19 +110,19 @@ deploy:
 
 **NixActions:**
 ```nix
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "ci";
   
   jobs = {
     test = {
-      executor = platform.executors.local;
+      executor = nixactions.executors.local;
       actions = [{ bash = "npm test"; }];
     };
     
     deploy = {
       needs = [ "test" ];
       condition = ''[ "$BRANCH" = "main" ]'';
-      executor = platform.executors.local;
+      executor = nixactions.executors.local;
       actions = [{ bash = "deploy.sh"; }];
     };
   };

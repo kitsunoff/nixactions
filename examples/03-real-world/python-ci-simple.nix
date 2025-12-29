@@ -1,5 +1,5 @@
 # Simplified Python CI example showing job isolation
-{ pkgs, platform, executor ? platform.executors.local }:
+{ pkgs, nixactions, executor ? nixactions.executors.local }:
 
 # Helper to create Python code (simulates checkout)
 let
@@ -30,7 +30,7 @@ def test_multiply():
 PYEOF
   '';
 
-in platform.mkWorkflow {
+in nixactions.mkWorkflow {
   name = "python-ci-simple";
   
   jobs = {

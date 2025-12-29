@@ -47,7 +47,7 @@ Provider :: Derivation {
 Load from `.env` file:
 
 ```nix
-platform.envProviders.file {
+nixactions.envProviders.file {
   path = ".env.production";
   required = false;  # Exit 1 if file not found
 }
@@ -58,7 +58,7 @@ platform.envProviders.file {
 Decrypt SOPS encrypted file:
 
 ```nix
-platform.envProviders.sops {
+nixactions.envProviders.sops {
   file = ./secrets/prod.sops.yaml;
   format = "yaml";  # yaml | json | dotenv
   required = true;
@@ -70,7 +70,7 @@ platform.envProviders.sops {
 Hardcoded values:
 
 ```nix
-platform.envProviders.static {
+nixactions.envProviders.static {
   CI = "true";
   NODE_ENV = "production";
 }
@@ -81,7 +81,7 @@ platform.envProviders.static {
 Validate that variables exist:
 
 ```nix
-platform.envProviders.required [
+nixactions.envProviders.required [
   "API_KEY"
   "DATABASE_URL"
   "DEPLOY_TOKEN"
@@ -95,7 +95,7 @@ platform.envProviders.required [
 ### Workflow Level
 
 ```nix
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "ci";
   
   # Direct env vars (inline)
@@ -107,19 +107,19 @@ platform.mkWorkflow {
   # Provider derivations
   envFrom = [
     # Load common config
-    (platform.envProviders.file {
+    (nixactions.envProviders.file {
       path = ".env.common";
       required = false;
     })
     
     # Load secrets from SOPS
-    (platform.envProviders.sops {
+    (nixactions.envProviders.sops {
       file = ./secrets/production.sops.yaml;
       required = true;
     })
     
     # Validate required variables
-    (platform.envProviders.required [
+    (nixactions.envProviders.required [
       "API_KEY"
       "DATABASE_URL"
     ])
@@ -142,7 +142,7 @@ jobs = {
     
     # Job-level providers
     envFrom = [
-      (platform.envProviders.file {
+      (nixactions.envProviders.file {
         path = ".env.deploy";
         required = false;
       })
@@ -287,7 +287,7 @@ job_deploy() {
 ## Complete Example
 
 ```nix
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "production-deployment";
   
   env = {
@@ -296,17 +296,17 @@ platform.mkWorkflow {
   };
   
   envFrom = [
-    (platform.envProviders.file {
+    (nixactions.envProviders.file {
       path = ".env.common";
       required = false;
     })
     
-    (platform.envProviders.sops {
+    (nixactions.envProviders.sops {
       file = ./secrets/common.sops.yaml;
       required = true;
     })
     
-    (platform.envProviders.required [
+    (nixactions.envProviders.required [
       "VAULT_ADDR"
       "VAULT_TOKEN"
     ])
@@ -314,7 +314,7 @@ platform.mkWorkflow {
   
   jobs = {
     deploy-api = {
-      executor = platform.executors.oci { ... };
+      executor = nixactions.executors.oci { ... };
       
       env = {
         SERVICE = "api";
@@ -322,12 +322,12 @@ platform.mkWorkflow {
       };
       
       envFrom = [
-        (platform.envProviders.file {
+        (nixactions.envProviders.file {
           path = ".env.api";
           required = false;
         })
         
-        (platform.envProviders.required [
+        (nixactions.envProviders.required [
           "API_KEY"
           "DATABASE_URL"
         ])

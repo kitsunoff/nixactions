@@ -203,7 +203,7 @@ Any bash script that returns exit code 0 (run) or 1 (skip).
 ```nix
 jobs = {
   test = {
-    executor = platform.executors.local;
+    executor = nixactions.executors.local;
     actions = [...];
   };
   
@@ -397,7 +397,7 @@ deploy.sh
 ```nix
 jobs = {
   test = {
-    executor = platform.executors.local;
+    executor = nixactions.executors.local;
     actions = [{ bash = "npm test"; }];
   };
   
@@ -416,7 +416,7 @@ jobs = {
 ```nix
 jobs = {
   build = {
-    executor = platform.executors.local;
+    executor = nixactions.executors.local;
     actions = [{ bash = "npm run build"; }];
   };
   
@@ -435,7 +435,7 @@ jobs = {
 ```nix
 jobs = {
   ci = {
-    executor = platform.executors.local;
+    executor = nixactions.executors.local;
     actions = [
       # Always runs
       {

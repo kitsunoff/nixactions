@@ -19,13 +19,13 @@
 #   REGISTRY_USER=unused REGISTRY_PASSWORD=unused nix run .#example-test-k8s-matrix-dedicated
 
 { pkgs
-, platform
+, nixactions
 , executor  # K8s executor must be provided (requires registry config)
 }:
 
 let
   # Generate 10 matrix jobs for testing parallel pod execution
-  matrixJobs = platform.mkMatrixJobs {
+  matrixJobs = nixactions.mkMatrixJobs {
     name = "worker";
     
     # Matrix configuration - generates worker-id-1 through worker-id-10
@@ -122,7 +122,7 @@ let
   };
 
 in
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "k8s-matrix-test";
   
   # Combine matrix jobs with aggregator

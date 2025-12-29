@@ -30,11 +30,14 @@ let
   # Environment providers
   envProviders = import ./env-providers/default.nix { inherit pkgs lib; };
   
-  # Logging utilities
-  logging = import ./logging.nix { inherit pkgs lib; };
+  # Runtime libraries (logging, retry, timeout, runtime-helpers)
+  runtimeLibs = import ./runtime-libs { inherit pkgs lib; };
   
-  # Retry utilities
-  retry = import ./retry.nix { inherit lib pkgs; };
+  # Logging utilities (re-export for backward compatibility)
+  logging = runtimeLibs.logging;
+  
+  # Retry utilities (re-export for backward compatibility)
+  retry = runtimeLibs.retry;
   
 in {
   # Export core constructors
@@ -59,6 +62,6 @@ in {
   inherit retry;
   
   # Export linuxPkgs for OCI executor extraPackages
-  # Use: platform.linuxPkgs.git instead of pkgs.git
+  # Use: nixactions.linuxPkgs.git instead of pkgs.git
   inherit linuxPkgs;
 }

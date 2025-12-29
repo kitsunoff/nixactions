@@ -1,7 +1,7 @@
 # Simple workflow example - basic sequential job execution
-{ pkgs, platform, executor ? platform.executors.local }:
+{ pkgs, nixactions, executor ? nixactions.executors.local }:
 
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "simple-workflow";
   
   jobs = {
@@ -10,7 +10,7 @@ platform.mkWorkflow {
       inherit executor;
       
       actions = [
-        platform.actions.checkout
+        nixactions.actions.checkout
         
         {
           name = "greet";

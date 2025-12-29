@@ -4,10 +4,10 @@ Complete API documentation for NixActions.
 
 ---
 
-## Platform API
+## NixActions API
 
 ```nix
-platform :: {
+nixactions :: {
   # Core constructors
   mkWorkflow   :: WorkflowConfig -> Derivation,
   mkExecutor   :: ExecutorConfig -> Executor,
@@ -51,7 +51,7 @@ mkWorkflow :: {
 ### Example
 
 ```nix
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "ci";
   
   env = {
@@ -59,7 +59,7 @@ platform.mkWorkflow {
   };
   
   envFrom = [
-    (platform.envProviders.file { path = ".env"; })
+    (nixactions.envProviders.file { path = ".env"; })
   ];
   
   retry = {
@@ -112,7 +112,7 @@ Job :: {
 ```nix
 {
   test = {
-    executor = platform.executors.local;
+    executor = nixactions.executors.local;
     needs = ["lint"];
     condition = "success()";
     
@@ -245,7 +245,7 @@ retry = null;
 
 ## Executors
 
-### platform.executors.local
+### nixactions.executors.local
 
 ```nix
 local :: {
@@ -258,16 +258,16 @@ local :: {
 
 ```nix
 # Default
-executor = platform.executors.local
+executor = nixactions.executors.local
 
 # Without repo copy
-executor = platform.executors.local { copyRepo = false; }
+executor = nixactions.executors.local { copyRepo = false; }
 
 # Custom name (separate workspace)
-executor = platform.executors.local { name = "isolated"; }
+executor = nixactions.executors.local { name = "isolated"; }
 ```
 
-### platform.executors.oci
+### nixactions.executors.oci
 
 ```nix
 oci :: {
@@ -284,20 +284,20 @@ oci :: {
 
 ```nix
 # Default (shared mode)
-executor = platform.executors.oci {}
+executor = nixactions.executors.oci {}
 
 # With extra packages
-executor = platform.executors.oci {
-  extraPackages = [ platform.linuxPkgs.git platform.linuxPkgs.curl ];
+executor = nixactions.executors.oci {
+  extraPackages = [ nixactions.linuxPkgs.git nixactions.linuxPkgs.curl ];
 }
 
 # Isolated mode (container per job)
-executor = platform.executors.oci {
+executor = nixactions.executors.oci {
   mode = "isolated";
 }
 
 # Custom mounts
-executor = platform.executors.oci {
+executor = nixactions.executors.oci {
   extraMounts = [ "/data:/data:ro" ];
 }
 ```
@@ -333,68 +333,68 @@ mkExecutor :: {
 ### Setup Actions
 
 ```nix
-platform.actions.checkout :: Action
+nixactions.actions.checkout :: Action
 
-platform.actions.setupNode :: {
+nixactions.actions.setupNode :: {
   version :: String,
 } -> Action
 
-platform.actions.setupPython :: {
+nixactions.actions.setupPython :: {
   version :: String,
 } -> Action
 
-platform.actions.setupRust :: Action
+nixactions.actions.setupRust :: Action
 ```
 
 ### Package Management
 
 ```nix
-platform.actions.nixShell :: [String] -> Action
+nixactions.actions.nixShell :: [String] -> Action
 ```
 
 **Example:**
 
 ```nix
-(platform.actions.nixShell [ "curl" "jq" "git" ])
+(nixactions.actions.nixShell [ "curl" "jq" "git" ])
 ```
 
 ### NPM Actions
 
 ```nix
-platform.actions.npmInstall :: Action
-platform.actions.npmTest :: Action
-platform.actions.npmBuild :: Action
-platform.actions.npmLint :: Action
+nixactions.actions.npmInstall :: Action
+nixactions.actions.npmTest :: Action
+nixactions.actions.npmBuild :: Action
+nixactions.actions.npmLint :: Action
 ```
 
 ### Secrets Actions
 
 ```nix
-platform.actions.sopsLoad :: {
+nixactions.actions.sopsLoad :: {
   file   :: Path,
   format :: "yaml" | "json" | "dotenv" = "yaml",
 } -> Action
 
-platform.actions.vaultLoad :: {
+nixactions.actions.vaultLoad :: {
   path :: String,
   addr :: String | Null = null,
 } -> Action
 
-platform.actions.opLoad :: {
+nixactions.actions.opLoad :: {
   vault :: String,
   item  :: String,
 } -> Action
 
-platform.actions.ageDecrypt :: {
+nixactions.actions.ageDecrypt :: {
   file     :: Path,
   identity :: Path,
 } -> Action
 
-platform.actions.bwLoad :: {
+nixactions.actions.bwLoad :: {
   itemId :: String,
 } -> Action
 
-platform.actions.requireEnv :: [String] -> Action
+nixactions.actions.requireEnv :: [String] -> Action
 ```
 
 ---
@@ -402,42 +402,42 @@ platform.actions.requireEnv :: [String] -> Action
 ## Environment Providers
 
 ```nix
-platform.envProviders.file :: {
+nixactions.envProviders.file :: {
   path     :: String,
   required :: Bool = false,
 } -> Derivation
 
-platform.envProviders.sops :: {
+nixactions.envProviders.sops :: {
   file     :: Path,
   format   :: "yaml" | "json" | "dotenv" = "yaml",
   required :: Bool = true,
 } -> Derivation
 
-platform.envProviders.static :: AttrSet String -> Derivation
+nixactions.envProviders.static :: AttrSet String -> Derivation
 
-platform.envProviders.required :: [String] -> Derivation
+nixactions.envProviders.required :: [String] -> Derivation
 ```
 
 ### Examples
 
 ```nix
 envFrom = [
-  (platform.envProviders.file {
+  (nixactions.envProviders.file {
     path = ".env";
     required = false;
   })
   
-  (platform.envProviders.sops {
+  (nixactions.envProviders.sops {
     file = ./secrets.sops.yaml;
     format = "yaml";
   })
   
-  (platform.envProviders.static {
+  (nixactions.envProviders.static {
     CI = "true";
     NODE_ENV = "production";
   })
   
-  (platform.envProviders.required [
+  (nixactions.envProviders.required [
     "API_KEY"
     "DATABASE_URL"
   ])
@@ -461,13 +461,13 @@ mkMatrixJobs :: {
 ### Example
 
 ```nix
-platform.mkMatrixJobs {
+nixactions.mkMatrixJobs {
   name = "test";
   matrix = {
     node = [ "18" "20" "22" ];
     os = [ "ubuntu" "macos" ];
   };
-  executor = platform.executors.local;
+  executor = nixactions.executors.local;
   actions = entry: [
     {
       bash = "echo Testing Node ${entry.node} on ${entry.os}";
@@ -489,7 +489,7 @@ platform.mkMatrixJobs {
 ## Pre-built Jobs
 
 ```nix
-platform.jobs.buildahBuildPush :: {
+nixactions.jobs.buildahBuildPush :: {
   name       :: String,
   context    :: String = ".",
   dockerfile :: String = "Dockerfile",
@@ -504,7 +504,7 @@ platform.jobs.buildahBuildPush :: {
 
 ```nix
 jobs = {
-  build-image = platform.jobs.buildahBuildPush {
+  build-image = nixactions.jobs.buildahBuildPush {
     name = "myapp";
     image = "registry.example.com/myapp";
     tags = [ "latest" "v1.0.0" ];

@@ -1,8 +1,8 @@
 # Test copyRepo configuration - verifies that copyRepo behavior works correctly
 # This test checks that repository files are available when copyRepo is enabled (default)
-{ pkgs, platform, executor ? platform.executors.local }:
+{ pkgs, nixactions, executor ? nixactions.executors.local }:
 
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "test-copy-repo";
   
   jobs = {
@@ -11,7 +11,7 @@ platform.mkWorkflow {
       inherit executor;
       
       actions = [
-        platform.actions.checkout
+        nixactions.actions.checkout
         
         {
           name = "check-repo-copied";

@@ -74,7 +74,7 @@ Runs jobs directly on the host machine in isolated directories.
 ### Configuration
 
 ```nix
-platform.executors.local :: {
+nixactions.executors.local :: {
   copyRepo :: Bool = true,   # Copy repo to job directory
   name     :: String | Null = null,  # Custom name for workspace isolation
 } -> Executor
@@ -84,13 +84,13 @@ platform.executors.local :: {
 
 ```nix
 # Default
-executor = platform.executors.local
+executor = nixactions.executors.local
 
 # Without repo copy
-executor = platform.executors.local { copyRepo = false; }
+executor = nixactions.executors.local { copyRepo = false; }
 
 # Custom name (creates separate workspace)
-executor = platform.executors.local { name = "build-env"; }
+executor = nixactions.executors.local { name = "build-env"; }
 ```
 
 ### Directory Structure
@@ -155,7 +155,7 @@ Runs jobs in Docker containers with images built via `pkgs.dockerTools.buildLaye
 ### Configuration
 
 ```nix
-platform.executors.oci :: {
+nixactions.executors.oci :: {
   name          :: String | Null = null,
   mode          :: "shared" | "isolated" = "shared",
   copyRepo      :: Bool = true,
@@ -169,25 +169,25 @@ platform.executors.oci :: {
 
 ```nix
 # Default (shared mode)
-executor = platform.executors.oci {}
+executor = nixactions.executors.oci {}
 
 # With extra packages (use linuxPkgs!)
-executor = platform.executors.oci {
-  extraPackages = [ platform.linuxPkgs.git platform.linuxPkgs.curl ];
+executor = nixactions.executors.oci {
+  extraPackages = [ nixactions.linuxPkgs.git nixactions.linuxPkgs.curl ];
 }
 
 # Isolated mode (container per job)
-executor = platform.executors.oci {
+executor = nixactions.executors.oci {
   mode = "isolated";
 }
 
 # Custom name
-executor = platform.executors.oci {
+executor = nixactions.executors.oci {
   name = "build-env";
 }
 
 # Additional mounts
-executor = platform.executors.oci {
+executor = nixactions.executors.oci {
   extraMounts = [ "/data:/data:ro" ];
 }
 ```
@@ -242,13 +242,13 @@ OCI executor automatically builds Linux images on Darwin:
 | `x86_64-darwin` | `x86_64-linux` | Uses `linuxPkgs` |
 | Linux | Same arch | Uses same `pkgs` |
 
-**Important:** Use `platform.linuxPkgs` for packages in OCI executor:
+**Important:** Use `nixactions.linuxPkgs` for packages in OCI executor:
 
 ```nix
-executor = platform.executors.oci {
+executor = nixactions.executors.oci {
   extraPackages = [ 
-    platform.linuxPkgs.git 
-    platform.linuxPkgs.nodejs 
+    nixactions.linuxPkgs.git 
+    nixactions.linuxPkgs.nodejs 
   ];
 }
 ```
@@ -283,11 +283,11 @@ Executors are deduplicated by `name`. Jobs with same executor share workspace:
 ```nix
 jobs = {
   build = { 
-    executor = platform.executors.oci {};  # name = "oci"
+    executor = nixactions.executors.oci {};  # name = "oci"
     ...
   };
   test = { 
-    executor = platform.executors.oci {};  # name = "oci" (SAME!)
+    executor = nixactions.executors.oci {};  # name = "oci" (SAME!)
     ...
   };
 }
@@ -303,11 +303,11 @@ jobs = {
 ```nix
 jobs = {
   build = { 
-    executor = platform.executors.oci { name = "build-env"; };
+    executor = nixactions.executors.oci { name = "build-env"; };
     ...
   };
   test = { 
-    executor = platform.executors.oci { name = "test-env"; };
+    executor = nixactions.executors.oci { name = "test-env"; };
     ...
   };
 }
@@ -335,7 +335,7 @@ Execute jobs on remote hosts via SSH.
 ### Configuration
 
 ```nix
-platform.executors.ssh {
+nixactions.executors.ssh {
   # Required
   host = "build-server.example.com";
   user = "builder";
@@ -369,20 +369,20 @@ platform.executors.ssh {
 
 ```nix
 # Basic SSH
-executor = platform.executors.ssh {
+executor = nixactions.executors.ssh {
   host = "build.example.com";
   user = "ci";
 };
 
 # Dedicated mode for security
-executor = platform.executors.ssh {
+executor = nixactions.executors.ssh {
   host = "scanner.example.com";
   user = "ci";
   mode = "dedicated";
 };
 
 # Pool for parallel builds
-executor = platform.executors.ssh {
+executor = nixactions.executors.ssh {
   hosts = [ "linux-1" "linux-2" "linux-3" ];
   user = "builder";
   mode = "pool";
@@ -409,7 +409,7 @@ Run jobs in Kubernetes pods with custom Nix-built images.
 ### Configuration
 
 ```nix
-platform.executors.k8s {
+nixactions.executors.k8s {
   # === Required ===
   namespace = "ci";
   
@@ -451,7 +451,7 @@ platform.executors.k8s {
 
 ```nix
 # Basic K8s with GitHub Container Registry
-executor = platform.executors.k8s {
+executor = nixactions.executors.k8s {
   namespace = "ci";
   registry = {
     url = "ghcr.io/myorg";
@@ -461,7 +461,7 @@ executor = platform.executors.k8s {
 };
 
 # Local registry for testing
-executor = platform.executors.k8s {
+executor = nixactions.executors.k8s {
   namespace = "default";
   registry = {
     url = "localhost:5000";
@@ -471,14 +471,14 @@ executor = platform.executors.k8s {
 };
 
 # Dedicated mode (pod per job)
-executor = platform.executors.k8s {
+executor = nixactions.executors.k8s {
   namespace = "ci";
   registry = { ... };
   mode = "dedicated";
 };
 
 # With GPU
-executor = platform.executors.k8s {
+executor = nixactions.executors.k8s {
   namespace = "ml";
   registry = { ... };
   nodeSelector = { "nvidia.com/gpu.present" = "true"; };
@@ -486,7 +486,7 @@ executor = platform.executors.k8s {
 };
 
 # Custom kubeconfig
-executor = platform.executors.k8s {
+executor = nixactions.executors.k8s {
   namespace = "ci";
   registry = { ... };
   kubeconfigEnv = "KUBECONFIG";
@@ -595,7 +595,7 @@ Run jobs in ephemeral NixOS virtual machines.
 ### Configuration
 
 ```nix
-platform.executors.nixosVm {
+nixactions.executors.nixosVm {
   # Configuration
   configuration = ./vm-config.nix;
   # OR
@@ -632,7 +632,7 @@ platform.executors.nixosVm {
 Use `mkExecutor` to create custom executors:
 
 ```nix
-platform.mkExecutor {
+nixactions.mkExecutor {
   name = "custom";
   copyRepo = true;
   

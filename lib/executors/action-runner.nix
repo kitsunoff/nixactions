@@ -17,8 +17,9 @@ rec {
     timingCommand ? "date +%s%N 2>/dev/null || echo \"0\"",
   }:
     let
-      retryLib = import ../retry.nix { inherit lib pkgs; };
-      timeoutLib = import ../timeout.nix { inherit lib pkgs; };
+      runtimeLibs = import ../runtime-libs { inherit lib pkgs; };
+      retryLib = runtimeLibs.retry;
+      timeoutLib = runtimeLibs.timeout;
       actionName = action.passthru.name or (builtins.baseNameOf action);
       actionCondition = 
         if action.passthru.condition != null 

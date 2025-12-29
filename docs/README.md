@@ -50,7 +50,7 @@ NixActions compiles workflows into self-contained executables that run anywhere 
 Nix Code                    Compiled Workflow           Execution
 ==========                  =================           =========
 
-platform.mkWorkflow {       #!/usr/bin/env bash         $ nix run .#ci
+nixactions.mkWorkflow {       #!/usr/bin/env bash         $ nix run .#ci
   jobs = {                  
     test = {                setup_workspace()           -> Setting up workspace
       actions = [           job_test()                  -> Running job: test
@@ -78,14 +78,14 @@ platform.mkWorkflow {       #!/usr/bin/env bash         $ nix run .#ci
 
 ```nix
 # ci.nix
-{ pkgs, platform }:
+{ pkgs, nixactions }:
 
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "ci";
   
   jobs = {
     test = {
-      executor = platform.executors.local;
+      executor = nixactions.executors.local;
       actions = [
         { bash = "npm test"; }
       ];
@@ -93,7 +93,7 @@ platform.mkWorkflow {
     
     build = {
       needs = [ "test" ];
-      executor = platform.executors.local;
+      executor = nixactions.executors.local;
       actions = [
         { bash = "npm run build"; }
       ];
@@ -181,12 +181,12 @@ condition = ''[ -f package.json ]'';
 ```nix
 jobs = {
   test = {
-    executor = platform.executors.local;
+    executor = nixactions.executors.local;
     ...
   };
   
   build = {
-    executor = platform.executors.oci { 
+    executor = nixactions.executors.oci { 
       extraPackages = [ pkgs.nodejs ]; 
     };
     ...

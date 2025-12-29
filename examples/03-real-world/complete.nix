@@ -1,7 +1,7 @@
 # Complete workflow example - demonstrates all major features
-{ pkgs, platform, executor ? platform.executors.local }:
+{ pkgs, nixactions, executor ? nixactions.executors.local }:
 
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "complete-ci-pipeline";
   
   # Workflow-level environment variables

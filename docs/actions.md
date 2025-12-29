@@ -176,28 +176,28 @@ NixActions provides a library of pre-built actions:
 
 ```nix
 # Checkout repository (usually automatic)
-platform.actions.checkout
+nixactions.actions.checkout
 
 # Setup Node.js
-platform.actions.setupNode { version = "20"; }
+nixactions.actions.setupNode { version = "20"; }
 
 # Setup Python
-platform.actions.setupPython { version = "3.11"; }
+nixactions.actions.setupPython { version = "3.11"; }
 
 # Setup Rust
-platform.actions.setupRust
+nixactions.actions.setupRust
 ```
 
 ### Dynamic Package Loading
 
 ```nix
 # Add packages on-the-fly
-platform.actions.nixShell [ "curl" "jq" "git" ]
+nixactions.actions.nixShell [ "curl" "jq" "git" ]
 
 # Usage in job
 {
   actions = [
-    (platform.actions.nixShell [ "curl" "jq" ])
+    (nixactions.actions.nixShell [ "curl" "jq" ])
     {
       bash = ''
         curl -s https://api.github.com/rate_limit | jq '.rate'
@@ -210,28 +210,28 @@ platform.actions.nixShell [ "curl" "jq" "git" ]
 ### NPM Actions
 
 ```nix
-platform.actions.npmInstall
-platform.actions.npmTest
-platform.actions.npmBuild
-platform.actions.npmLint
+nixactions.actions.npmInstall
+nixactions.actions.npmTest
+nixactions.actions.npmBuild
+nixactions.actions.npmLint
 ```
 
 ### Secrets Actions
 
 ```nix
 # Load from SOPS
-platform.actions.sopsLoad {
+nixactions.actions.sopsLoad {
   file = ./secrets.sops.yaml;
   format = "yaml";  # yaml | json | dotenv
 }
 
 # Load from Vault
-platform.actions.vaultLoad {
+nixactions.actions.vaultLoad {
   path = "secret/data/production";
 }
 
 # Validate required vars
-platform.actions.requireEnv [ "API_KEY" "DB_PASSWORD" ]
+nixactions.actions.requireEnv [ "API_KEY" "DB_PASSWORD" ]
 ```
 
 ---

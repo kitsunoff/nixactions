@@ -1,14 +1,14 @@
-{ pkgs, platform, executor ? platform.executors.local }:
+{ pkgs, nixactions, executor ? nixactions.executors.local }:
 
 # Multi-Image Buildah Pipeline Example
 #
 # This example demonstrates building multiple container images
 # in a single pipeline with different configurations.
 
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "multi-image-pipeline";
   
-  jobs = platform.jobs.buildahBuildPush {
+  jobs = nixactions.jobs.buildahBuildPush {
     inherit executor;
     
     # Job naming
@@ -70,7 +70,7 @@ platform.mkWorkflow {
     # Environment providers
     envProviders = [
       # For GitHub Container Registry, you might use:
-      # (platform.envProviders.sops {
+      # (nixactions.envProviders.sops {
       #   file = ./github-secrets.sops.yaml;
       # })
     ];

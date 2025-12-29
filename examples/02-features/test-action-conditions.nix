@@ -1,9 +1,9 @@
 # Test: Action conditions
 # Demonstrates success(), failure(), always(), and bash script conditions
 
-{ pkgs, platform, executor ? platform.executors.local }:
+{ pkgs, nixactions, executor ? nixactions.executors.local }:
 
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "test-action-conditions";
   
   jobs = {

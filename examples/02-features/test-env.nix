@@ -1,8 +1,8 @@
 # Test: Variable propagation between actions
 # Shows the difference between regular vars, local, and export
-{ pkgs, platform, executor ? platform.executors.local }:
+{ pkgs, nixactions, executor ? nixactions.executors.local }:
 
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "test-env-propagation";
   
   jobs = {

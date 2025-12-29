@@ -1,4 +1,4 @@
-{ pkgs, platform, executor ? platform.executors.local }:
+{ pkgs, nixactions, executor ? nixactions.executors.local }:
 
 # Test: Environment Providers
 # 
@@ -18,13 +18,13 @@ let
   '';
 in
 
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "test-env-providers";
   
   # Environment providers executed in order
   envFrom = [
     # 1. Static provider - lowest priority
-    (platform.envProviders.static {
+    (nixactions.envProviders.static {
       STATIC_VAR = "from_static";
       SHARED_VAR = "static_priority";
       CI = "true";
@@ -32,13 +32,13 @@ platform.mkWorkflow {
     })
     
     # 2. File provider - higher priority than static
-    (platform.envProviders.file {
+    (nixactions.envProviders.file {
       path = testEnvFile;
       required = false;
     })
     
     # 3. Required provider - validates vars are set
-    (platform.envProviders.required [
+    (nixactions.envProviders.required [
       "STATIC_VAR"
       "FILE_VAR"
       "DB_HOST"

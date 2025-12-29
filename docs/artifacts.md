@@ -54,7 +54,7 @@ Artifacts allow jobs to share files explicitly and safely.
 ```nix
 jobs = {
   build = {
-    executor = platform.executors.local;
+    executor = nixactions.executors.local;
     
     # Declare outputs (what to save)
     outputs = {
@@ -72,7 +72,7 @@ jobs = {
   
   test = {
     needs = ["build"];
-    executor = platform.executors.local;
+    executor = nixactions.executors.local;
     
     # Declare inputs (what to restore)
     inputs = [ "dist" "binary" ];

@@ -41,10 +41,10 @@
     let
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
-      platform = nixactions.lib.${system};
+      nixactionsLib = nixactions.lib.${system};
     in {
       packages.${system}.ci = import ./ci.nix { 
-        inherit pkgs platform; 
+        inherit pkgs nixactions; 
       };
     };
 }
@@ -54,15 +54,15 @@
 
 ```nix
 # ci.nix
-{ pkgs, platform }:
+{ pkgs, nixactions }:
 
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "ci";
   
   jobs = {
     # Runs immediately (Level 0)
     lint = {
-      executor = platform.executors.local;
+      executor = nixactions.executors.local;
       actions = [
         { bash = "npm run lint"; }
       ];
@@ -71,7 +71,7 @@ platform.mkWorkflow {
     # Runs after lint succeeds (Level 1)
     test = {
       needs = [ "lint" ];
-      executor = platform.executors.local;
+      executor = nixactions.executors.local;
       actions = [
         { bash = "npm test"; }
       ];
@@ -150,13 +150,13 @@ Multiple providers (SOPS, file, static, required), environment precedence, runti
 ```bash
 $ nix run .#example-nix-shell
 ```
-Add packages on-the-fly with `platform.actions.nixShell`, no executor modification needed.
+Add packages on-the-fly with `nixactions.actions.nixShell`, no executor modification needed.
 
 **matrix-builds.nix** - Compile-time matrix job generation
 ```bash
 $ nix run .#example-matrix-builds
 ```
-`platform.mkMatrixJobs` for cross-platform testing, multi-version testing, auto-generated job names.
+`nixactions.mkMatrixJobs` for cross-platform testing, multi-version testing, auto-generated job names.
 
 **structured-logging.nix** - Log formats for observability
 ```bash
@@ -233,22 +233,22 @@ Executors define **where** code runs:
 
 ```nix
 # Local machine (default)
-executor = platform.executors.local
+executor = nixactions.executors.local
 
 # Local with options
-executor = platform.executors.local { 
+executor = nixactions.executors.local { 
   copyRepo = false;  # Don't copy repository to job directory
   name = "build-env";  # Custom name for isolated workspace
 }
 
 # Docker container
-executor = platform.executors.oci { 
+executor = nixactions.executors.oci { 
   image = "node:20";
   copyRepo = true;   # Copy repo to job directory (default)
 }
 
 # Custom executor name (creates separate workspace)
-executor = platform.executors.oci { 
+executor = nixactions.executors.oci { 
   image = "nixos/nix"; 
   name = "test-env";  # Custom name
 }
@@ -285,19 +285,19 @@ Standard actions library:
 
 ```nix
 # Setup actions
-platform.actions.checkout
-platform.actions.setupNode { version = "20"; }
-platform.actions.setupPython { version = "3.11"; }
-platform.actions.setupRust
+nixactions.actions.checkout
+nixactions.actions.setupNode { version = "20"; }
+nixactions.actions.setupPython { version = "3.11"; }
+nixactions.actions.setupRust
 
 # Dynamic package loading
-platform.actions.nixShell [ "curl" "jq" "git" ]
+nixactions.actions.nixShell [ "curl" "jq" "git" ]
 
 # NPM actions
-platform.actions.npmInstall
-platform.actions.npmTest
-platform.actions.npmBuild
-platform.actions.npmLint
+nixactions.actions.npmInstall
+nixactions.actions.npmTest
+nixactions.actions.npmBuild
+nixactions.actions.npmLint
 ```
 
 #### Dynamic Package Loading with nixShell
@@ -308,10 +308,10 @@ The `nixShell` action allows you to dynamically add any Nix package to your job 
 {
   jobs = {
     api-test = {
-      executor = platform.executors.local;
+      executor = nixactions.executors.local;
       actions = [
         # Add packages on-the-fly
-        (platform.actions.nixShell [ "curl" "jq" ])
+        (nixactions.actions.nixShell [ "curl" "jq" ])
         
         # Use them in subsequent actions
         {
@@ -324,9 +324,9 @@ The `nixShell` action allows you to dynamically add any Nix package to your job 
     
     # Different tools in different jobs
     file-processing = {
-      executor = platform.executors.local;
+      executor = nixactions.executors.local;
       actions = [
-        (platform.actions.nixShell [ "ripgrep" "fd" "bat" ])
+        (nixactions.actions.nixShell [ "ripgrep" "fd" "bat" ])
         {
           bash = "fd -e nix -x rg -l 'TODO'";
         }
@@ -350,12 +350,12 @@ See `examples/nix-shell.nix` for more examples.
 {
   actions = [
     # Load from SOPS
-    (platform.actions.sopsLoad {
+    (nixactions.actions.sopsLoad {
       file = ./secrets.sops.yaml;
     })
     
     # Validate required vars
-    (platform.actions.requireEnv [ 
+    (nixactions.actions.requireEnv [ 
       "API_KEY" 
       "DB_PASSWORD" 
     ])
@@ -372,18 +372,18 @@ See `examples/nix-shell.nix` for more examples.
 ```
 
 Supported secrets managers:
-- **SOPS** (recommended) - `platform.actions.sopsLoad`
-- **HashiCorp Vault** - `platform.actions.vaultLoad`
-- **1Password** - `platform.actions.opLoad`
-- **Age** - `platform.actions.ageDecrypt`
-- **Bitwarden** - `platform.actions.bwLoad`
+- **SOPS** (recommended) - `nixactions.actions.sopsLoad`
+- **HashiCorp Vault** - `nixactions.actions.vaultLoad`
+- **1Password** - `nixactions.actions.opLoad`
+- **Age** - `nixactions.actions.ageDecrypt`
+- **Bitwarden** - `nixactions.actions.bwLoad`
 
 ### Environment Variables
 
 Variables can be set at three levels (with precedence):
 
 ```nix
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   # Workflow level (lowest priority)
   env = {
     PROJECT = "myapp";
@@ -565,7 +565,7 @@ nixactions/
 ### Platform API
 
 ```nix
-platform :: {
+nixactions :: {
   # Core constructors
   mkExecutor   :: ExecutorConfig -> Executor,
   mkWorkflow   :: WorkflowConfig -> Derivation,

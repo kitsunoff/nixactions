@@ -1,4 +1,4 @@
-{ pkgs, platform, executor ? platform.executors.local }:
+{ pkgs, nixactions, executor ? nixactions.executors.local }:
 
 # Real-world Node.js CI/CD Pipeline
 #
@@ -16,7 +16,7 @@
 #   # Deploy to production (requires BRANCH=main)
 #   BRANCH=main DEPLOY_KEY=xxx nix run .#example-nodejs-full-pipeline-local
 
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "nodejs-ci-cd";
   
   # Workflow-level environment
@@ -28,8 +28,8 @@ platform.mkWorkflow {
   
   # TODO: Enable when envFrom is implemented in mk-workflow.nix
   # envFrom = [
-  #   (platform.envProviders.file { path = ".env.common"; required = false; })
-  #   (platform.envProviders.static { BRANCH = "develop"; })
+  #   (nixactions.envProviders.file { path = ".env.common"; required = false; })
+  #   (nixactions.envProviders.static { BRANCH = "develop"; })
   # ];
   
   jobs = {
@@ -216,7 +216,7 @@ platform.mkWorkflow {
       
       # TODO: Enable when envFrom is implemented
       # envFrom = [
-      #   (platform.envProviders.required ["DEPLOY_KEY"])
+      #   (nixactions.envProviders.required ["DEPLOY_KEY"])
       # ];
       
       inputs = [

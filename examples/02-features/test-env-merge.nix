@@ -1,4 +1,4 @@
-{ pkgs, platform, executor ? platform.executors.local }:
+{ pkgs, nixactions, executor ? nixactions.executors.local }:
 
 # Test: Environment Variable Merging
 #
@@ -17,7 +17,7 @@
 #   - VAR_ACTION should override VAR_JOB in specific action
 #   - VAR_RUNTIME (if set) should override everything
 
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "test-env-merge";
   
   # Level 1: Workflow-level environment (lowest priority from config)

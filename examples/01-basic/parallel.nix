@@ -1,7 +1,7 @@
 # Parallel workflow example - demonstrates GitHub Actions-style parallel execution
-{ pkgs, platform, executor ? platform.executors.local }:
+{ pkgs, nixactions, executor ? nixactions.executors.local }:
 
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "parallel-workflow";
   
   jobs = {

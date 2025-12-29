@@ -2,9 +2,9 @@
 # - Run unit tests with pytest
 # - Build Docker image
 # - Push to registry (simulated)
-{ pkgs, platform, executor ? platform.executors.local }:
+{ pkgs, nixactions, executor ? nixactions.executors.local }:
 
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "python-ci-cd";
   
   # Workflow-level environment

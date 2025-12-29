@@ -21,11 +21,11 @@
 #   REGISTRY_USER=myuser REGISTRY_PASSWORD=mytoken nix run .#example-test-k8s-shared
 
 { pkgs
-, platform
+, nixactions
 , executor  # K8s executor must be provided (requires registry config)
 }:
 
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "k8s-test";
   
   jobs = {

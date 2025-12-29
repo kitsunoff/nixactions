@@ -27,10 +27,10 @@ Get started with NixActions in minutes.
     let
       system = "x86_64-linux";  # or "aarch64-darwin", etc.
       pkgs = nixpkgs.legacyPackages.${system};
-      platform = nixactions.lib.${system};
+      nixactionsLib = nixactions.lib.${system};
     in {
       packages.${system}.ci = import ./ci.nix { 
-        inherit pkgs platform; 
+        inherit pkgs nixactions; 
       };
     };
 }
@@ -40,14 +40,14 @@ Get started with NixActions in minutes.
 
 ```nix
 # ci.nix
-{ pkgs, platform }:
+{ pkgs, nixactions }:
 
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "ci";
   
   jobs = {
     test = {
-      executor = platform.executors.local;
+      executor = nixactions.executors.local;
       actions = [
         { bash = "echo 'Hello, NixActions!'"; }
       ];
@@ -76,7 +76,7 @@ $ ./result/bin/ci
 ```nix
 jobs = {
   my-job = {
-    executor = platform.executors.local;
+    executor = nixactions.executors.local;
     actions = [
       { bash = "echo 'Step 1'"; }
       { bash = "echo 'Step 2'"; }
@@ -121,14 +121,14 @@ jobs = {
 ### Node.js Project
 
 ```nix
-{ pkgs, platform }:
+{ pkgs, nixactions }:
 
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "nodejs-ci";
   
   jobs = {
     test = {
-      executor = platform.executors.local;
+      executor = nixactions.executors.local;
       actions = [
         {
           name = "install";
@@ -150,7 +150,7 @@ platform.mkWorkflow {
     
     build = {
       needs = [ "test" ];
-      executor = platform.executors.local;
+      executor = nixactions.executors.local;
       
       outputs = {
         dist = "dist/";
@@ -171,14 +171,14 @@ platform.mkWorkflow {
 ### Python Project
 
 ```nix
-{ pkgs, platform }:
+{ pkgs, nixactions }:
 
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "python-ci";
   
   jobs = {
     test = {
-      executor = platform.executors.local;
+      executor = nixactions.executors.local;
       actions = [
         {
           name = "install";
@@ -204,14 +204,14 @@ platform.mkWorkflow {
 ### Conditional Deployment
 
 ```nix
-{ pkgs, platform }:
+{ pkgs, nixactions }:
 
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "deploy";
   
   jobs = {
     test = {
-      executor = platform.executors.local;
+      executor = nixactions.executors.local;
       actions = [
         { bash = "npm test"; deps = [ pkgs.nodejs ]; }
       ];
@@ -220,7 +220,7 @@ platform.mkWorkflow {
     deploy-staging = {
       needs = [ "test" ];
       condition = ''[ "$BRANCH" = "develop" ]'';
-      executor = platform.executors.local;
+      executor = nixactions.executors.local;
       actions = [
         { bash = "deploy.sh staging"; }
       ];
@@ -229,7 +229,7 @@ platform.mkWorkflow {
     deploy-production = {
       needs = [ "test" ];
       condition = ''[ "$BRANCH" = "main" ]'';
-      executor = platform.executors.local;
+      executor = nixactions.executors.local;
       actions = [
         { bash = "deploy.sh production"; }
       ];
@@ -238,7 +238,7 @@ platform.mkWorkflow {
     notify = {
       needs = [ "test" ];
       condition = "always()";
-      executor = platform.executors.local;
+      executor = nixactions.executors.local;
       actions = [
         {
           bash = ''curl -X POST $SLACK_WEBHOOK -d '{"text":"CI complete"}' '';
@@ -259,7 +259,7 @@ platform.mkWorkflow {
 Runs on the current machine:
 
 ```nix
-executor = platform.executors.local
+executor = nixactions.executors.local
 ```
 
 ### OCI Executor
@@ -267,24 +267,24 @@ executor = platform.executors.local
 Runs in Docker containers:
 
 ```nix
-executor = platform.executors.oci {
-  extraPackages = [ platform.linuxPkgs.nodejs ];
+executor = nixactions.executors.oci {
+  extraPackages = [ nixactions.linuxPkgs.nodejs ];
 }
 ```
 
-**Note:** Use `platform.linuxPkgs` for packages in OCI executor (required for cross-platform builds on macOS).
+**Note:** Use `nixactions.linuxPkgs` for packages in OCI executor (required for cross-platform builds on macOS).
 
 ### Multiple Executors
 
 ```nix
 jobs = {
   local-task = {
-    executor = platform.executors.local;
+    executor = nixactions.executors.local;
     ...
   };
   
   container-task = {
-    executor = platform.executors.oci { ... };
+    executor = nixactions.executors.oci { ... };
     ...
   };
 };
@@ -340,7 +340,7 @@ inputs = [
 ### Workflow Level
 
 ```nix
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "ci";
   
   env = {
@@ -394,12 +394,12 @@ jobs = {
   deploy = {
     actions = [
       # Load secrets
-      (platform.actions.sopsLoad {
+      (nixactions.actions.sopsLoad {
         file = ./secrets.sops.yaml;
       })
       
       # Validate
-      (platform.actions.requireEnv [ "API_KEY" "DB_PASSWORD" ])
+      (nixactions.actions.requireEnv [ "API_KEY" "DB_PASSWORD" ])
       
       # Use secrets
       { bash = "deploy.sh"; }
@@ -411,13 +411,13 @@ jobs = {
 ### Using Environment Providers
 
 ```nix
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "ci";
   
   envFrom = [
-    (platform.envProviders.file { path = ".env"; })
-    (platform.envProviders.sops { file = ./secrets.sops.yaml; })
-    (platform.envProviders.required [ "API_KEY" ])
+    (nixactions.envProviders.file { path = ".env"; })
+    (nixactions.envProviders.sops { file = ./secrets.sops.yaml; })
+    (nixactions.envProviders.required [ "API_KEY" ])
   ];
   
   jobs = { ... };
@@ -493,9 +493,9 @@ $ NIXACTIONS_LOG_FORMAT=json nix run .#ci
 ## Complete Example
 
 ```nix
-{ pkgs, platform }:
+{ pkgs, nixactions }:
 
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "production-ci";
   
   env = {
@@ -503,13 +503,13 @@ platform.mkWorkflow {
   };
   
   envFrom = [
-    (platform.envProviders.file { path = ".env"; required = false; })
+    (nixactions.envProviders.file { path = ".env"; required = false; })
   ];
   
   jobs = {
     # Level 0: Parallel checks
     lint = {
-      executor = platform.executors.local;
+      executor = nixactions.executors.local;
       actions = [
         {
           name = "eslint";
@@ -520,7 +520,7 @@ platform.mkWorkflow {
     };
     
     security = {
-      executor = platform.executors.local;
+      executor = nixactions.executors.local;
       continueOnError = true;
       actions = [
         {
@@ -534,7 +534,7 @@ platform.mkWorkflow {
     # Level 1: Tests
     test = {
       needs = [ "lint" ];
-      executor = platform.executors.local;
+      executor = nixactions.executors.local;
       
       outputs = {
         coverage = "coverage/";
@@ -556,7 +556,7 @@ platform.mkWorkflow {
     # Level 2: Build
     build = {
       needs = [ "test" ];
-      executor = platform.executors.local;
+      executor = nixactions.executors.local;
       
       outputs = {
         dist = "dist/";
@@ -575,12 +575,12 @@ platform.mkWorkflow {
     deploy = {
       needs = [ "build" ];
       condition = ''[ "$BRANCH" = "main" ]'';
-      executor = platform.executors.local;
+      executor = nixactions.executors.local;
       
       inputs = [ "dist" ];
       
       actions = [
-        (platform.actions.requireEnv [ "DEPLOY_KEY" ])
+        (nixactions.actions.requireEnv [ "DEPLOY_KEY" ])
         {
           name = "deploy";
           bash = "deploy.sh";
@@ -593,7 +593,7 @@ platform.mkWorkflow {
     notify = {
       needs = [ "build" ];
       condition = "always()";
-      executor = platform.executors.local;
+      executor = nixactions.executors.local;
       
       actions = [
         {

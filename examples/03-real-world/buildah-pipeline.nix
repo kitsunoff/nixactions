@@ -1,4 +1,4 @@
-{ pkgs, platform, executor ? platform.executors.local }:
+{ pkgs, nixactions, executor ? nixactions.executors.local }:
 
 # Buildah Container Build Pipeline Example
 #
@@ -13,10 +13,10 @@
 #   - Registry authentication
 #   - Artifact saving
 
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "buildah-pipeline";
   
-  jobs = platform.jobs.buildahBuildPush {
+  jobs = nixactions.jobs.buildahBuildPush {
     inherit executor;
     
     # Job naming
@@ -69,18 +69,18 @@ platform.mkWorkflow {
     # Environment providers for secrets
     envProviders = [
       # Option 1: Use sops for secrets
-      # (platform.envProviders.sops {
+      # (nixactions.envProviders.sops {
       #   file = ./secrets.sops.yaml;
       # })
       
       # Option 2: Require env vars to be set
-      (platform.envProviders.required [
+      (nixactions.envProviders.required [
         "REGISTRY_USERNAME"
         "REGISTRY_PASSWORD"
       ])
       
       # Option 3: Static values (for testing only!)
-      # (platform.envProviders.static {
+      # (nixactions.envProviders.static {
       #   REGISTRY_USERNAME = "testuser";
       #   REGISTRY_PASSWORD = "testpass";
       # })

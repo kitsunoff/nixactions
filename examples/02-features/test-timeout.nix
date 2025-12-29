@@ -1,4 +1,4 @@
-{ pkgs, platform, executor ? platform.executors.local }:
+{ pkgs, nixactions, executor ? nixactions.executors.local }:
 
 # Test: Timeout Support
 #
@@ -9,7 +9,7 @@
 #
 # Priority: action > job > workflow
 
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "test-timeout";
   
   # Workflow-level timeout (lowest priority)

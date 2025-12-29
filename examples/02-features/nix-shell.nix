@@ -1,4 +1,4 @@
-{ pkgs, platform, executor ? platform.executors.local }:
+{ pkgs, nixactions, executor ? nixactions.executors.local }:
 
 # Example: Using nixShell to dynamically add packages to job environment
 #
@@ -7,7 +7,7 @@
 # 2. Using those packages in subsequent actions
 # 3. Different packages in different jobs
 
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "nix-shell-example";
   
   jobs = {
@@ -16,7 +16,7 @@ platform.mkWorkflow {
       inherit executor;
       actions = [
         # Add curl and jq to the environment
-        (platform.actions.nixShell [ "curl" "jq" ])
+        (nixactions.actions.nixShell [ "curl" "jq" ])
         
         # Use them in subsequent actions
         {
@@ -39,7 +39,7 @@ platform.mkWorkflow {
       inherit executor;
       actions = [
         # Add file processing tools
-        (platform.actions.nixShell [ "ripgrep" "fd" "bat" ])
+        (nixactions.actions.nixShell [ "ripgrep" "fd" "bat" ])
         
         {
           name = "Process files";
@@ -63,7 +63,7 @@ platform.mkWorkflow {
       needs = [ "api-test" "file-processing" ];
       actions = [
         # First set of tools
-        (platform.actions.nixShell [ "git" "tree" ])
+        (nixactions.actions.nixShell [ "git" "tree" ])
         
         {
           name = "Use git and tree";
@@ -79,7 +79,7 @@ platform.mkWorkflow {
         }
         
         # Add more tools in the same job
-        (platform.actions.nixShell [ "htop" "ncdu" ])
+        (nixactions.actions.nixShell [ "htop" "ncdu" ])
         
         {
           name = "System tools available";

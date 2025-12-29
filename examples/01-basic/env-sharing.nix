@@ -1,9 +1,9 @@
 # Example: Environment variable sharing between actions
 # Demonstrates practical patterns for sharing data between actions in a job
 
-{ pkgs, platform, executor ? platform.executors.local }:
+{ pkgs, nixactions, executor ? nixactions.executors.local }:
 
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "env-sharing-demo";
   
   jobs = {

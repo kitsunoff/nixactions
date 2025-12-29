@@ -1,9 +1,9 @@
-{ pkgs, platform, executor ? platform.executors.local }:
+{ pkgs, nixactions, executor ? nixactions.executors.local }:
 
 # Comprehensive test suite for action conditions
 # Tests all condition types, bash expressions, and edge cases
 
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "test-conditions-comprehensive";
   
   jobs = {

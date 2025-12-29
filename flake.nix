@@ -58,15 +58,15 @@
       # Executor variants for generating packages
       # Note: K8s executors are not included here as they require registry configuration
       # K8s examples are generated separately with a default local registry config
-      mkExecutorVariants = platform: {
-        local = platform.executors.local;
-        oci-shared = platform.executors.oci { mode = "shared"; };
-        oci-isolated = platform.executors.oci { mode = "isolated"; };
+      mkExecutorVariants = nixactions: {
+        local = nixactions.executors.local;
+        oci-shared = nixactions.executors.oci { mode = "shared"; };
+        oci-isolated = nixactions.executors.oci { mode = "isolated"; };
       };
       
       # K8s executor variants (with default local registry for testing)
-      mkK8sExecutorVariants = platform: {
-        k8s-shared = platform.executors.k8s {
+      mkK8sExecutorVariants = nixactions: {
+        k8s-shared = nixactions.executors.k8s {
           namespace = "default";
           registry = {
             url = "localhost:5001";  # Kind local registry port
@@ -75,7 +75,7 @@
           };
           mode = "shared";
         };
-        k8s-dedicated = platform.executors.k8s {
+        k8s-dedicated = nixactions.executors.k8s {
           namespace = "default";
           registry = {
             url = "localhost:5001";  # Kind local registry port
@@ -95,11 +95,11 @@
       # Example packages (auto-discovered with executor variants)
       packages = forAllSystems ({ pkgs, system }:
         let
-          platform = self.lib.${system};
+          nixactions = self.lib.${system};
           lib = pkgs.lib;
           
           # Get executor variants
-          executorVariants = mkExecutorVariants platform;
+          executorVariants = mkExecutorVariants nixactions;
           
           # Discover all examples
           examples = discoverAllExamples pkgs;
@@ -110,7 +110,7 @@
             lib.mapAttrsToList (variantName: executor: {
               name = "example-${ex.baseName}-${variantName}";
               value = import (./examples + "/${ex.category}/${ex.baseName}.nix") { 
-                inherit pkgs platform executor; 
+                inherit pkgs nixactions executor; 
               };
             }) executorVariants;
           
@@ -121,20 +121,20 @@
           examplePackages = builtins.listToAttrs allVariants;
           
           # K8s variants - for test-k8s examples (requires special setup)
-          k8sExecutorVariants = mkK8sExecutorVariants platform;
+          k8sExecutorVariants = mkK8sExecutorVariants nixactions;
           
           # Basic K8s test
           k8sExamples = lib.mapAttrs' (variantName: executor: {
             name = "example-test-k8s-${lib.removePrefix "k8s-" variantName}";
             value = import ./examples/02-features/test-k8s.nix {
-              inherit pkgs platform executor;
+              inherit pkgs nixactions executor;
             };
           }) k8sExecutorVariants;
           
           # K8s matrix test (10 parallel jobs) - only dedicated mode makes sense
           k8sMatrixExamples = {
             "example-test-k8s-matrix-dedicated" = import ./examples/02-features/test-k8s-matrix.nix {
-              inherit pkgs platform;
+              inherit pkgs nixactions;
               executor = k8sExecutorVariants.k8s-dedicated;
             };
           };
@@ -143,7 +143,7 @@
           k8sEnvProviderExamples = lib.mapAttrs' (variantName: executor: {
             name = "example-test-k8s-env-providers-${lib.removePrefix "k8s-" variantName}";
             value = import ./examples/02-features/test-k8s-env-providers.nix {
-              inherit pkgs platform executor;
+              inherit pkgs nixactions executor;
             };
           }) k8sExecutorVariants;
           

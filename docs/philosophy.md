@@ -91,7 +91,7 @@ steps:
 ```nix
 # NixActions - explicit, typed, composable
 actions = [
-  (platform.actions.setupNode { version = "18"; })
+  (nixactions.actions.setupNode { version = "18"; })
   { bash = "npm test"; deps = [ pkgs.nodejs ]; }
 ];
 ```

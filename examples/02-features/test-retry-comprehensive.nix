@@ -1,9 +1,9 @@
-{ pkgs, platform, executor ? platform.executors.local }:
+{ pkgs, nixactions, executor ? nixactions.executors.local }:
 
 # Comprehensive test suite for retry mechanism
 # Tests all backoff strategies, edge cases, and failure scenarios
 
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "test-retry-comprehensive";
   
   jobs = {

@@ -1,7 +1,7 @@
 # Artifacts with nested paths example
-{ pkgs, platform, executor ? platform.executors.local }:
+{ pkgs, nixactions, executor ? nixactions.executors.local }:
 
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "artifacts-paths";
   
   jobs = {

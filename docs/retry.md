@@ -43,7 +43,7 @@ retry = {
 Priority: action > job > workflow
 
 ```nix
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "ci";
   
   # Level 1: Workflow-level (applies to ALL jobs)
@@ -166,7 +166,7 @@ Attempt 3 -> delay 5s
 ### Workflow-wide Retry
 
 ```nix
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "ci";
   
   retry = {

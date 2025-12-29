@@ -1,7 +1,7 @@
 # Test: Job isolation - env vars don't leak between jobs
-{ pkgs, platform, executor ? platform.executors.local }:
+{ pkgs, nixactions, executor ? nixactions.executors.local }:
 
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "test-job-isolation";
   
   # Workflow-level env (shared by all jobs)

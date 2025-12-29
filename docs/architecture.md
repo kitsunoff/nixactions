@@ -48,7 +48,7 @@ Nix Evaluation                 Build                    Runtime
 flake.nix                      
     |                          
     v                          
-platform.mkWorkflow            
+nixactions.mkWorkflow            
     |                          
     +-- jobs.test              
     |      |                   

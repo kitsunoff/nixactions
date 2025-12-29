@@ -1,7 +1,7 @@
 # Secrets management example - demonstrates environment variables and validation
-{ pkgs, platform, executor ? platform.executors.local }:
+{ pkgs, nixactions, executor ? nixactions.executors.local }:
 
-platform.mkWorkflow {
+nixactions.mkWorkflow {
   name = "secrets-workflow";
   
   # Workflow-level secrets (can be overridden at runtime)
@@ -23,7 +23,7 @@ platform.mkWorkflow {
       
       # Use env-providers to validate required variables
       envProviders = [
-        (platform.envProviders.required [ 
+        (nixactions.envProviders.required [ 
           "APP_NAME" 
           "ENVIRONMENT"
           "DATABASE_HOST"
@@ -134,9 +134,9 @@ platform.mkWorkflow {
             echo ""
             
             # In real scenario, secrets would be loaded from:
-            # - SOPS: envProviders = [ (platform.envProviders.sops { file = ./secrets.sops.yaml; }) ];
-            # - File: envProviders = [ (platform.envProviders.file { path = ./.env.secrets; }) ];
-            # - Static: envProviders = [ (platform.envProviders.static { API_KEY = "xxx"; }) ];
+            # - SOPS: envProviders = [ (nixactions.envProviders.sops { file = ./secrets.sops.yaml; }) ];
+            # - File: envProviders = [ (nixactions.envProviders.file { path = ./.env.secrets; }) ];
+            # - Static: envProviders = [ (nixactions.envProviders.static { API_KEY = "xxx"; }) ];
             # - Runtime: API_KEY=xxx nix run .#deploy
             
             echo "In production, this would:"
@@ -176,10 +176,10 @@ platform.mkWorkflow {
           echo "  $ API_KEY=secret123 DB_PASSWORD=pass456 nix run .#example-secrets"
           echo ""
           echo "For production secrets, use envProviders:"
-          echo "  • SOPS (encrypted files): platform.envProviders.sops"
-          echo "  • File (.env files): platform.envProviders.file"
-          echo "  • Static (hardcoded): platform.envProviders.static"
-          echo "  • Required (validation): platform.envProviders.required"
+          echo "  • SOPS (encrypted files): nixactions.envProviders.sops"
+          echo "  • File (.env files): nixactions.envProviders.file"
+          echo "  • Static (hardcoded): nixactions.envProviders.static"
+          echo "  • Required (validation): nixactions.envProviders.required"
           echo ""
         '';
       }];
