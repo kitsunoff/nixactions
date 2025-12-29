@@ -11,7 +11,7 @@ nixactions.mkWorkflow {
     test-exponential-success = {
       inherit executor;
       
-      actions = [
+      steps = [
         {
           name = "exponential-backoff-success";
           bash = ''
@@ -49,7 +49,7 @@ nixactions.mkWorkflow {
       inherit executor;
       needs = ["test-exponential-success"];
       
-      actions = [
+      steps = [
         {
           name = "linear-backoff-success";
           bash = ''
@@ -86,7 +86,7 @@ nixactions.mkWorkflow {
       inherit executor;
       needs = ["test-linear-success"];
       
-      actions = [
+      steps = [
         {
           name = "constant-backoff-success";
           bash = ''
@@ -124,7 +124,7 @@ nixactions.mkWorkflow {
       needs = ["test-constant-success"];
       continueOnError = true;  # Don't stop workflow on failure
       
-      actions = [
+      steps = [
         {
           name = "always-fails";
           bash = ''
@@ -147,7 +147,7 @@ nixactions.mkWorkflow {
       inherit executor;
       needs = ["test-retry-exhausted"];
       
-      actions = [
+      steps = [
         {
           name = "single-attempt-success";
           bash = ''
@@ -170,7 +170,7 @@ nixactions.mkWorkflow {
       needs = ["test-no-retry-single-attempt"];
       retry = null;  # Explicitly disable retry
       
-      actions = [
+      steps = [
         {
           name = "no-retry-action";
           bash = ''
@@ -186,7 +186,7 @@ nixactions.mkWorkflow {
       inherit executor;
       needs = ["test-retry-disabled"];
       
-      actions = [
+      steps = [
         {
           name = "max-delay-capped";
           bash = ''
@@ -231,7 +231,7 @@ nixactions.mkWorkflow {
         max_time = 1;
       };
       
-      actions = [
+      steps = [
         {
           name = "inherits-job-retry";
           bash = ''
@@ -269,7 +269,7 @@ nixactions.mkWorkflow {
         max_time = 10;
       };
       
-      actions = [
+      steps = [
         {
           name = "overrides-job-retry";
           bash = ''
@@ -305,7 +305,7 @@ nixactions.mkWorkflow {
       inherit executor;
       needs = ["test-action-overrides-job"];
       
-      actions = [
+      steps = [
         {
           name = "verify-exponential-timing";
           bash = ''

@@ -60,7 +60,7 @@ nixactions.mkWorkflow {
         backoff = "linear";
       };
       
-      actions = [
+      steps = [
         {
           name = "flaky-test";
           bash = "npm test";
@@ -84,7 +84,7 @@ nixactions.mkWorkflow {
       # Disable retry for this job
       retry = null;
       
-      actions = [{
+      steps = [{
         bash = "kubectl apply -f prod/";
         # No retry even if workflow-level is set
       }];
@@ -150,7 +150,7 @@ Attempt 3 -> delay 5s
 
 ```nix
 {
-  actions = [{
+  steps = [{
     name = "flaky-test";
     bash = "npm test";
     retry = {
@@ -175,8 +175,8 @@ nixactions.mkWorkflow {
   };
   
   jobs = {
-    test.actions = [{ bash = "npm test"; }];
-    lint.actions = [{ bash = "npm run lint"; }];
+    test.steps = [{ bash = "npm test"; }];
+    lint.steps = [{ bash = "npm run lint"; }];
     # Both inherit workflow-level retry
   };
 }
@@ -193,7 +193,7 @@ nixactions.mkWorkflow {
         backoff = "exponential";
       };
       
-      actions = [
+      steps = [
         { bash = "npm install"; }  # Retries enabled
         { bash = "npm test"; }     # Retries enabled
         {

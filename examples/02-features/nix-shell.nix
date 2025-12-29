@@ -14,7 +14,7 @@ nixactions.mkWorkflow {
     # Job 1: Use curl and jq for API testing
     api-test = {
       inherit executor;
-      actions = [
+      steps = [
         # Add curl and jq to the environment
         (nixactions.actions.nixShell [ "curl" "jq" ])
         
@@ -37,7 +37,7 @@ nixactions.mkWorkflow {
     # Job 2: Use different tools for file processing
     file-processing = {
       inherit executor;
-      actions = [
+      steps = [
         # Add file processing tools
         (nixactions.actions.nixShell [ "ripgrep" "fd" "bat" ])
         
@@ -61,7 +61,7 @@ nixactions.mkWorkflow {
     multi-tool = {
       inherit executor;
       needs = [ "api-test" "file-processing" ];
-      actions = [
+      steps = [
         # First set of tools
         (nixactions.actions.nixShell [ "git" "tree" ])
         

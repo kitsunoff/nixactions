@@ -11,7 +11,7 @@ nixactions.mkWorkflow {
     test-success-condition = {
       inherit executor;
       
-      actions = [
+      steps = [
         {
           name = "first-succeeds";
           bash = ''
@@ -35,7 +35,7 @@ nixactions.mkWorkflow {
       needs = ["test-success-condition"];
       continueOnError = true;
       
-      actions = [
+      steps = [
         {
           name = "first-fails";
           bash = ''
@@ -67,7 +67,7 @@ nixactions.mkWorkflow {
       needs = ["test-failure-condition"];
       continueOnError = true;
       
-      actions = [
+      steps = [
         {
           name = "first-fails";
           bash = ''
@@ -103,7 +103,7 @@ nixactions.mkWorkflow {
         VERSION = "1.2.3";
       };
       
-      actions = [
+      steps = [
         {
           name = "check-production";
           bash = ''
@@ -147,7 +147,7 @@ nixactions.mkWorkflow {
         NAME = "test";
       };
       
-      actions = [
+      steps = [
         {
           name = "numeric-comparison-gt";
           bash = ''
@@ -190,7 +190,7 @@ nixactions.mkWorkflow {
         DEBUG = "false";
       };
       
-      actions = [
+      steps = [
         {
           name = "and-condition-true";
           bash = ''
@@ -229,7 +229,7 @@ nixactions.mkWorkflow {
       inherit executor;
       needs = ["test-logical-conditions"];
       
-      actions = [
+      steps = [
         {
           name = "check-directory-not-empty";
           bash = ''
@@ -258,7 +258,7 @@ nixactions.mkWorkflow {
         STEP = "build";
       };
       
-      actions = [
+      steps = [
         {
           name = "step-1-build";
           bash = ''
@@ -302,7 +302,7 @@ nixactions.mkWorkflow {
         EMPTY_VAR = "";
       };
       
-      actions = [
+      steps = [
         {
           name = "check-var-set";
           bash = ''
@@ -334,7 +334,7 @@ nixactions.mkWorkflow {
       needs = ["test-empty-variable-conditions"];
       continueOnError = true;
       
-      actions = [
+      steps = [
         {
           name = "action-1-succeeds";
           bash = ''

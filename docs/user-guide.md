@@ -48,7 +48,7 @@ nixactions.mkWorkflow {
   jobs = {
     test = {
       executor = nixactions.executors.local;
-      actions = [
+      steps = [
         { bash = "echo 'Hello, NixActions!'"; }
       ];
     };
@@ -77,7 +77,7 @@ $ ./result/bin/ci
 jobs = {
   my-job = {
     executor = nixactions.executors.local;
-    actions = [
+    steps = [
       { bash = "echo 'Step 1'"; }
       { bash = "echo 'Step 2'"; }
     ];
@@ -129,7 +129,7 @@ nixactions.mkWorkflow {
   jobs = {
     test = {
       executor = nixactions.executors.local;
-      actions = [
+      steps = [
         {
           name = "install";
           bash = "npm ci";
@@ -156,7 +156,7 @@ nixactions.mkWorkflow {
         dist = "dist/";
       };
       
-      actions = [
+      steps = [
         {
           name = "build";
           bash = "npm run build";
@@ -179,7 +179,7 @@ nixactions.mkWorkflow {
   jobs = {
     test = {
       executor = nixactions.executors.local;
-      actions = [
+      steps = [
         {
           name = "install";
           bash = "pip install -r requirements.txt";
@@ -212,7 +212,7 @@ nixactions.mkWorkflow {
   jobs = {
     test = {
       executor = nixactions.executors.local;
-      actions = [
+      steps = [
         { bash = "npm test"; deps = [ pkgs.nodejs ]; }
       ];
     };
@@ -221,7 +221,7 @@ nixactions.mkWorkflow {
       needs = [ "test" ];
       condition = ''[ "$BRANCH" = "develop" ]'';
       executor = nixactions.executors.local;
-      actions = [
+      steps = [
         { bash = "deploy.sh staging"; }
       ];
     };
@@ -230,7 +230,7 @@ nixactions.mkWorkflow {
       needs = [ "test" ];
       condition = ''[ "$BRANCH" = "main" ]'';
       executor = nixactions.executors.local;
-      actions = [
+      steps = [
         { bash = "deploy.sh production"; }
       ];
     };
@@ -239,7 +239,7 @@ nixactions.mkWorkflow {
       needs = [ "test" ];
       condition = "always()";
       executor = nixactions.executors.local;
-      actions = [
+      steps = [
         {
           bash = ''curl -X POST $SLACK_WEBHOOK -d '{"text":"CI complete"}' '';
           deps = [ pkgs.curl ];
@@ -303,7 +303,7 @@ jobs = {
       dist = "dist/";
       binary = "target/release/myapp";
     };
-    actions = [
+    steps = [
       { bash = "npm run build"; }
     ];
   };
@@ -317,7 +317,7 @@ jobs = {
   deploy = {
     needs = [ "build" ];
     inputs = [ "dist" "binary" ];
-    actions = [
+    steps = [
       { bash = "ls dist/"; }
     ];
   };
@@ -392,7 +392,7 @@ $ API_KEY=secret123 nix run .#ci
 ```nix
 jobs = {
   deploy = {
-    actions = [
+    steps = [
       # Load secrets
       (nixactions.actions.sopsLoad {
         file = ./secrets.sops.yaml;
@@ -510,7 +510,7 @@ nixactions.mkWorkflow {
     # Level 0: Parallel checks
     lint = {
       executor = nixactions.executors.local;
-      actions = [
+      steps = [
         {
           name = "eslint";
           bash = "npm run lint";
@@ -522,7 +522,7 @@ nixactions.mkWorkflow {
     security = {
       executor = nixactions.executors.local;
       continueOnError = true;
-      actions = [
+      steps = [
         {
           name = "audit";
           bash = "npm audit";
@@ -540,7 +540,7 @@ nixactions.mkWorkflow {
         coverage = "coverage/";
       };
       
-      actions = [
+      steps = [
         {
           name = "test";
           bash = "npm test -- --coverage";
@@ -562,7 +562,7 @@ nixactions.mkWorkflow {
         dist = "dist/";
       };
       
-      actions = [
+      steps = [
         {
           name = "build";
           bash = "npm run build";
@@ -579,7 +579,7 @@ nixactions.mkWorkflow {
       
       inputs = [ "dist" ];
       
-      actions = [
+      steps = [
         (nixactions.actions.requireEnv [ "DEPLOY_KEY" ])
         {
           name = "deploy";
@@ -595,7 +595,7 @@ nixactions.mkWorkflow {
       condition = "always()";
       executor = nixactions.executors.local;
       
-      actions = [
+      steps = [
         {
           name = "slack";
           condition = "always()";

@@ -10,7 +10,7 @@ nixactions.mkWorkflow {
     check-copy = {
       inherit executor;
       
-      actions = [
+      steps = [
         nixactions.actions.checkout
         
         {
@@ -63,7 +63,7 @@ nixactions.mkWorkflow {
       needs = ["check-copy"];
       inherit executor;
       
-      actions = [
+      steps = [
         {
           name = "check-isolation-between-jobs";
           bash = ''

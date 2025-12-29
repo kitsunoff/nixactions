@@ -90,7 +90,7 @@ steps:
 
 ```nix
 # NixActions - explicit, typed, composable
-actions = [
+steps = [
   (nixactions.actions.setupNode { version = "18"; })
   { bash = "npm test"; deps = [ pkgs.nodejs ]; }
 ];

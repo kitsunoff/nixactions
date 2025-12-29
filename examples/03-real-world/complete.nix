@@ -21,7 +21,7 @@ nixactions.mkWorkflow {
         LINT_MODE = "strict";
       };
       
-      actions = [
+      steps = [
         {
           name = "lint-nix";
           deps = [ pkgs.nixpkgs-fmt ];
@@ -41,7 +41,7 @@ nixactions.mkWorkflow {
       # This job can fail without stopping the workflow
       continueOnError = true;
       
-      actions = [{
+      steps = [{
         name = "security-scan";
         bash = ''
           echo "→ Running security scan..."
@@ -61,7 +61,7 @@ nixactions.mkWorkflow {
     validate = {
       inherit executor;
       
-      actions = [{
+      steps = [{
         name = "validate-structure";
         bash = ''
           echo "→ Validating project structure..."
@@ -86,7 +86,7 @@ nixactions.mkWorkflow {
       needs = [ "lint" "validate" ];
       inherit executor;
       
-      actions = [
+      steps = [
         {
           name = "run-tests";
           bash = ''
@@ -108,7 +108,7 @@ nixactions.mkWorkflow {
       needs = [ "test" ];
       inherit executor;
       
-      actions = [
+      steps = [
         {
           name = "build-artifacts";
           deps = [ pkgs.coreutils pkgs.gnutar pkgs.gzip ];
@@ -139,7 +139,7 @@ nixactions.mkWorkflow {
       "if" = "success()";
       inherit executor;
       
-      actions = [{
+      steps = [{
         name = "deploy-to-staging";
         bash = ''
           echo "→ Deploying to staging..."
@@ -156,7 +156,7 @@ nixactions.mkWorkflow {
       "if" = "success()";
       inherit executor;
       
-      actions = [{
+      steps = [{
         name = "notify-success";
         bash = ''
           echo "→ Sending success notification..."
@@ -172,7 +172,7 @@ nixactions.mkWorkflow {
       "if" = "failure()";
       inherit executor;
       
-      actions = [{
+      steps = [{
         name = "notify-failure";
         bash = ''
           echo "→ Sending failure notification..."
@@ -190,7 +190,7 @@ nixactions.mkWorkflow {
       "if" = "always()";
       inherit executor;
       
-      actions = [{
+      steps = [{
         name = "cleanup-resources";
         bash = ''
           echo "→ Cleaning up..."

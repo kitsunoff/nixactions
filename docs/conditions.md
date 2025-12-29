@@ -60,7 +60,7 @@ jobs = {
   rollback = {
     needs = ["test"];
     condition = "failure()";
-    actions = [{
+    steps = [{
       bash = "kubectl rollout undo deployment/app";
     }];
   };
@@ -78,7 +78,7 @@ jobs = {
   notify = {
     needs = ["test"];
     condition = "always()";
-    actions = [{
+    steps = [{
       bash = ''
         curl -X POST $WEBHOOK \
           -d '{"status": "completed"}'
@@ -89,7 +89,7 @@ jobs = {
   cleanup = {
     needs = ["test"];
     condition = "always()";
-    actions = [{
+    steps = [{
       bash = "rm -rf /tmp/test-data";
     }];
   };
@@ -107,7 +107,7 @@ jobs = {
   handle-cancel = {
     needs = ["long-task"];
     condition = "cancelled()";
-    actions = [{
+    steps = [{
       bash = "echo 'Workflow was cancelled'";
     }];
   };
@@ -204,7 +204,7 @@ Any bash script that returns exit code 0 (run) or 1 (skip).
 jobs = {
   test = {
     executor = nixactions.executors.local;
-    actions = [...];
+    steps = [...];
   };
   
   # Only on success (default)
@@ -218,7 +218,7 @@ jobs = {
   cleanup-on-failure = {
     needs = ["test"];
     condition = "failure()";
-    actions = [{
+    steps = [{
       bash = "rm -rf /tmp/test-data";
     }];
   };
@@ -268,7 +268,7 @@ GitHub Actions supports `if` on steps - NixActions supports `condition` on actio
 
 ```nix
 {
-  actions = [
+  steps = [
     {
       name = "test";
       bash = "npm test";
@@ -398,13 +398,13 @@ deploy.sh
 jobs = {
   test = {
     executor = nixactions.executors.local;
-    actions = [{ bash = "npm test"; }];
+    steps = [{ bash = "npm test"; }];
   };
   
   cleanup = {
     needs = ["test"];
     condition = "failure()";
-    actions = [{
+    steps = [{
       bash = "rm -rf /tmp/test-data";
     }];
   };
@@ -417,13 +417,13 @@ jobs = {
 jobs = {
   build = {
     executor = nixactions.executors.local;
-    actions = [{ bash = "npm run build"; }];
+    steps = [{ bash = "npm run build"; }];
   };
   
   deploy = {
     needs = ["build"];
     condition = ''[ "$GITHUB_REF" = "refs/heads/main" ]'';
-    actions = [{
+    steps = [{
       bash = "kubectl apply -f k8s/";
     }];
   };
@@ -436,7 +436,7 @@ jobs = {
 jobs = {
   ci = {
     executor = nixactions.executors.local;
-    actions = [
+    steps = [
       # Always runs
       {
         name = "test";

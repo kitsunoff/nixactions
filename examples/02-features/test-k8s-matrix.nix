@@ -40,7 +40,7 @@ let
         WORKER_ID = id;
         WORKER_NAME = "worker-${id}";
       };
-      actions = [
+      steps = [
         {
           name = "init";
           bash = ''
@@ -84,7 +84,7 @@ let
       inherit executor;
       needs = builtins.attrNames matrixJobs;  # Wait for all workers
       inputs = builtins.map (id: "result-${id}") [ "1" "2" "3" "4" "5" "6" "7" "8" "9" "10" ];
-      actions = [
+      steps = [
         {
           name = "collect-results";
           bash = ''

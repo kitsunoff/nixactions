@@ -31,7 +31,7 @@ nixactions.mkWorkflow {
         ])
       ];
       
-      actions = [
+      steps = [
         {
           name = "show-config";
           bash = ''
@@ -49,7 +49,7 @@ nixactions.mkWorkflow {
       needs = [ "validate-env" ];
       inherit executor;
       
-      actions = [
+      steps = [
         {
           name = "check-optional-secrets";
           bash = ''
@@ -83,7 +83,7 @@ nixactions.mkWorkflow {
         LOG_LEVEL = "info";
       };
       
-      actions = [
+      steps = [
         {
           name = "default-log-level";
           bash = ''
@@ -121,7 +121,7 @@ nixactions.mkWorkflow {
         DEPLOY_TARGET = "staging-cluster";
       };
       
-      actions = [
+      steps = [
         {
           name = "simulate-deployment";
           bash = ''
@@ -157,7 +157,7 @@ nixactions.mkWorkflow {
       "if" = "always()";
       inherit executor;
       
-      actions = [{
+      steps = [{
         name = "secrets-demo-report";
         bash = ''
           echo ""

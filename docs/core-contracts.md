@@ -1,17 +1,19 @@
 # Core Contracts
 
-NixActions is built on four core contracts: Action, Executor, Job, and Workflow.
+NixActions is built on four core contracts: Step, Executor, Job, and Workflow.
 
 ---
 
-## Contract 1: Action = Derivation
+## Contract 1: Step = Derivation
 
-**Definition:** Action is a Nix derivation (bash script + dependencies in /nix/store)
+**Definition:** A Step is a Nix derivation (bash script + dependencies in /nix/store).
+
+> **Note:** "Step" is the execution primitive. "Action" refers to reusable components from `lib/actions/` or SDK-defined actions.
 
 ### Type Signature
 
 ```nix
-Action :: Derivation {
+Step :: Derivation {
   type = "derivation";
   outputPath = "/nix/store/xxx-action-name";
   
@@ -29,7 +31,7 @@ Action :: Derivation {
 ### Constructor
 
 ```nix
-mkAction :: {
+mkStep :: {
   name      :: String,
   bash      :: String,
   deps      :: [Derivation] = [],
@@ -43,11 +45,11 @@ mkAction :: {
 
 ### Key Design Points
 
-- Action is ALWAYS a derivation in `/nix/store`
-- User can pass attrset (converted to derivation via `mkAction`)
-- User can pass derivation directly (already an action)
-- Build-time validation (if action doesn't build -> workflow doesn't build)
-- Caching (actions built once, reused across jobs)
+- Step is ALWAYS a derivation in `/nix/store`
+- User can pass attrset (converted to derivation via `mkStep`)
+- User can pass derivation directly (already a step)
+- Build-time validation (if step doesn't build -> workflow doesn't build)
+- Caching (steps built once, reused across jobs)
 
 ### Examples
 
@@ -75,11 +77,11 @@ mkAction :: {
 
 # Direct derivation usage:
 let
-  testAction = pkgs.writeScriptBin "test" ''
+  testStep = pkgs.writeScriptBin "test" ''
     npm test
   '';
 in {
-  actions = [ testAction ];
+  steps = [ testStep ];
 }
 ```
 
@@ -99,7 +101,7 @@ Executor :: {
   # === WORKSPACE LEVEL (for entire workflow) ===
   
   setupWorkspace :: {
-    actionDerivations :: [Derivation]  # ALL actions from ALL jobs sharing this executor
+    actionDerivations :: [Derivation]  # ALL steps from ALL jobs sharing this executor
   } -> Bash,
   
   cleanupWorkspace :: {
@@ -110,7 +112,7 @@ Executor :: {
   
   setupJob :: {
     jobName           :: String,
-    actionDerivations :: [Derivation],  # Actions for THIS job only
+    actionDerivations :: [Derivation],  # Steps for THIS job only
   } -> Bash,
   
   executeJob :: {
@@ -182,7 +184,7 @@ cleanup_all() {
 
 ## Contract 3: Job (GitHub Actions Style)
 
-**Definition:** Composition of actions + executor + metadata
+**Definition:** Composition of steps + executor + metadata
 
 ### Type Signature
 
@@ -190,7 +192,7 @@ cleanup_all() {
 Job :: {
   # Required
   executor :: Executor,
-  actions  :: [Action],
+  steps    :: [Step],
   
   # Dependencies (GitHub Actions style)
   needs :: [String] = [],
@@ -288,7 +290,7 @@ mkWorkflow :: {
 4. Generate job functions
    job_test() {
      executeJob {
-       actions = [ /nix/store/xxx /nix/store/yyy ];
+       steps = [ /nix/store/xxx /nix/store/yyy ];
      }
    }
 

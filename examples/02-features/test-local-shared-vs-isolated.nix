@@ -14,7 +14,7 @@ nixactions.mkWorkflow {
     job1-shared = {
       inherit executor;
       
-      actions = [{
+      steps = [{
         name = "job1-action";
         bash = ''
           echo "→ Job 1 (using shared executor)"
@@ -28,7 +28,7 @@ nixactions.mkWorkflow {
       inherit executor;
       needs = ["job1-shared"];
       
-      actions = [{
+      steps = [{
         name = "job2-action";
         bash = ''
           echo "→ Job 2 (using shared executor)"
@@ -42,7 +42,7 @@ nixactions.mkWorkflow {
       inherit executor;
       needs = ["job2-shared"];
       
-      actions = [{
+      steps = [{
         name = "job3-action";
         bash = ''
           echo "→ Job 3 (using shared executor)"
@@ -60,7 +60,7 @@ nixactions.mkWorkflow {
       inherit executor;
       needs = ["job3-shared"];
       
-      actions = [{
+      steps = [{
         name = "summary";
         bash = ''
           echo ""

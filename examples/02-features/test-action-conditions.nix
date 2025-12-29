@@ -10,7 +10,7 @@ nixactions.mkWorkflow {
     # Test 1: success() condition (default)
     test-success = {
       inherit executor;
-      actions = [
+      steps = [
         {
           name = "action1-succeeds";
           bash = "echo 'Action 1: SUCCESS'";
@@ -28,7 +28,7 @@ nixactions.mkWorkflow {
       needs = ["test-success"];
       inherit executor;
       continue-on-error = true;  # This job is expected to fail
-      actions = [
+      steps = [
         {
           name = "action1-fails";
           bash = "echo 'Action 1: FAILING'; exit 1";
@@ -51,7 +51,7 @@ nixactions.mkWorkflow {
       needs = ["test-failure"];
       inherit executor;
       continue-on-error = true;  # This job is expected to fail
-      actions = [
+      steps = [
         {
           name = "action1-fails";
           bash = "echo 'Action 1: FAILING'; exit 1";
@@ -72,7 +72,7 @@ nixactions.mkWorkflow {
         ENVIRONMENT = "production";
         DEPLOY_ENABLED = "true";
       };
-      actions = [
+      steps = [
         {
           name = "setup";
           bash = "echo 'Setup completed'";
@@ -100,7 +100,7 @@ nixactions.mkWorkflow {
       needs = ["test-bash-conditions"];
       inherit executor;
       continue-on-error = true;  # This job is expected to fail
-      actions = [
+      steps = [
         {
           name = "build";
           bash = "echo 'Building...'; echo 'Build complete'";

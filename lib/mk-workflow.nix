@@ -31,7 +31,13 @@ let
   
   # Filter out empty jobs created by lib.optionalAttrs
   # This happens when job templates use lib.optionalAttrs with false condition
-  nonEmptyJobs = lib.filterAttrs (name: job: job != {} && (job.actions or null) != null) jobs;
+  # Support both 'steps' (new) and 'actions' (deprecated) for backward compatibility
+  nonEmptyJobs = lib.filterAttrs (name: job: 
+    job != {} && ((job.steps or null) != null || (job.actions or null) != null)
+  ) jobs;
+  
+  # Helper to get steps from job (supports both 'steps' and deprecated 'actions')
+  getJobSteps = job: job.steps or job.actions or [];
   
   # Validate unique artifact names across all jobs
   allOutputs = lib.flatten (
@@ -69,60 +75,60 @@ let
     lib.filterAttrs (name: job: depths.${name} == level) nonEmptyJobs
   ) (maxDepth + 1);
   
-  # Extract deps from actions
-  extractDeps = actions: 
-    lib.unique (lib.concatMap (a: a.deps or []) actions);
+  # Extract deps from steps
+  extractDeps = steps: 
+    lib.unique (lib.concatMap (a: a.deps or []) steps);
   
-  # Convert action attribute to derivation if needed
-  # Also merges retry and timeout configuration from workflow -> job -> action
-  toActionDerivation = jobRetry: jobTimeout: action:
-    if builtins.isAttrs action && !(action ? type && action.type == "derivation")
+  # Convert step attribute to derivation if needed
+  # Also merges retry and timeout configuration from workflow -> job -> step
+  toStepDerivation = jobRetry: jobTimeout: step:
+    if builtins.isAttrs step && !(step ? type && step.type == "derivation")
     then
       # It's an attribute, convert to derivation
       let
-        actionName = action.name or "action";
-        actionBash = action.bash or "echo 'No bash script provided'";
+        stepName = step.name or "step";
+        stepBash = step.bash or "echo 'No bash script provided'";
         
-        # Merge retry configs: action > job > workflow
-        actionRetry = retryLib.mergeRetryConfigs {
+        # Merge retry configs: step > job > workflow
+        stepRetry = retryLib.mergeRetryConfigs {
           workflow = retry;
           job = jobRetry;
-          action = action.retry or null;
+          action = step.retry or null;  # Keep 'action' key for retryLib compatibility
         };
         
-        # Merge timeout configs: action > job > workflow
-        actionTimeout = timeoutLib.mergeTimeoutConfigs {
+        # Merge timeout configs: step > job > workflow
+        stepTimeout = timeoutLib.mergeTimeoutConfigs {
           workflow = timeout;
           job = jobTimeout;
-          action = action.timeout or null;
+          action = step.timeout or null;  # Keep 'action' key for timeoutLib compatibility
         };
         
         # Extract dependencies
-        actionDeps = action.deps or [];
+        stepDeps = step.deps or [];
         
         drv = pkgs.writeShellApplication {
-          name = actionName;
-          runtimeInputs = actionDeps;
-          text = actionBash;
+          name = stepName;
+          runtimeInputs = stepDeps;
+          text = stepBash;
         };
       in
         drv // {
           passthru = (drv.passthru or {}) // {
-            name = actionName;
-            bash = actionBash;
-            deps = action.deps or [];
-            env = action.env or {};
-            workdir = action.workdir or null;
-            condition = action.condition or null;
-            retry = actionRetry;  # Merged retry config
-            timeout = actionTimeout;  # Merged timeout config
+            name = stepName;
+            bash = stepBash;
+            deps = step.deps or [];
+            env = step.env or {};
+            workdir = step.workdir or null;
+            condition = step.condition or null;
+            retry = stepRetry;  # Merged retry config
+            timeout = stepTimeout;  # Merged timeout config
           };
         }
     else
       # Already a derivation - try to extract bash from it
-      action // {
-        passthru = (action.passthru or {}) // {
-          bash = action.passthru.bash or null;
+      step // {
+        passthru = (step.passthru or {}) // {
+          bash = step.passthru.bash or null;
         };
       };
   
@@ -132,14 +138,14 @@ let
     then { name = input; path = "."; }  # Simple string -> default path
     else input;  # Already attribute set
   
-  # Collect all action derivations from all jobs
-  allActionDerivations = lib.unique (lib.flatten (
+  # Collect all step derivations from all jobs
+  allStepDerivations = lib.unique (lib.flatten (
     lib.mapAttrsToList (jobName: job:
       let
         jobRetry = job.retry or retry;
         jobTimeout = job.timeout or timeout;
       in
-        map (toActionDerivation jobRetry jobTimeout) job.actions
+        map (toStepDerivation jobRetry jobTimeout) (getJobSteps job)
     ) nonEmptyJobs
   ));
   
@@ -155,26 +161,26 @@ let
     in
       lib.attrValues executorsByName;
   
-  # For each unique executor, collect its action derivations
-  # This is needed for setupWorkspace({ actionDerivations })
-  executorActionDerivations = lib.listToAttrs (
+  # For each unique executor, collect its step derivations
+  # This is needed for setupWorkspace({ stepDerivations })
+  executorStepDerivations = lib.listToAttrs (
     map (executor:
       let
         # Find all jobs using this executor (by name)
         jobsUsingExecutor = lib.filterAttrs (jobName: job: job.executor.name == executor.name) nonEmptyJobs;
-        # Collect all action derivations from those jobs
-        execActionDerivs = lib.unique (lib.flatten (
+        # Collect all step derivations from those jobs
+        execStepDerivs = lib.unique (lib.flatten (
           lib.mapAttrsToList (jobName: job:
             let
               jobRetry = job.retry or retry;
               jobTimeout = job.timeout or timeout;
             in
-              map (toActionDerivation jobRetry jobTimeout) job.actions
+              map (toStepDerivation jobRetry jobTimeout) (getJobSteps job)
           ) jobsUsingExecutor
         ));
       in {
         name = executor.name;
-        value = execActionDerivs;
+        value = execStepDerivs;
       }
     ) allExecutors
   );
@@ -190,8 +196,9 @@ let
       # Merge timeout config for this job: job > workflow
       jobTimeout = job.timeout or timeout;
       
-      # Convert actions to derivations (if not already)
-      actionDerivations = map (toActionDerivation jobRetry jobTimeout) job.actions;
+      # Convert steps to derivations (if not already)
+      # actionDerivations name kept for executor API compatibility
+      actionDerivations = map (toStepDerivation jobRetry jobTimeout) (getJobSteps job);
       
       # Job-level environment (static, from Nix)
       jobEnv = lib.attrsets.mergeAttrsList [ env (job.env or {}) ];
@@ -294,7 +301,7 @@ in (pkgs.writeScriptBin name ''
     # Cleanup all executor workspaces (this removes everything including .job-status/)
     ${lib.concatMapStringsSep "\n" (executor: 
       executor.cleanupWorkspace { 
-        actionDerivations = executorActionDerivations.${executor.name}; 
+        actionDerivations = executorStepDerivations.${executor.name}; 
       }
     ) allExecutors}
   }
@@ -398,7 +405,7 @@ in (pkgs.writeScriptBin name ''
     # Setup workspaces for all unique executors
     ${lib.concatMapStringsSep "\n" (executor: 
       executor.setupWorkspace { 
-        actionDerivations = executorActionDerivations.${executor.name}; 
+        actionDerivations = executorStepDerivations.${executor.name}; 
       }
     ) allExecutors}
     
@@ -428,9 +435,9 @@ in (pkgs.writeScriptBin name ''
   
   main "$@"
 '').overrideAttrs (old: {
-  # Add all action derivations and env providers as build-time dependencies
+  # Add all step derivations and env providers as build-time dependencies
   # This ensures Nix knows about them and includes them in closures
-  buildInputs = (old.buildInputs or []) ++ allActionDerivations ++ envFrom ++ [
+  buildInputs = (old.buildInputs or []) ++ allStepDerivations ++ envFrom ++ [
     loggingLib.loggingHelpers
     retryLib.retryHelpers
     timeoutLib.timeoutHelpers

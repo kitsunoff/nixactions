@@ -20,7 +20,7 @@ nixactions.mkWorkflow {
     test-fast-action = {
       inherit executor;
       
-      actions = [
+      steps = [
         {
           name = "fast-action";
           bash = ''
@@ -41,7 +41,7 @@ nixactions.mkWorkflow {
       # Job continues even if action times out
       continueOnError = true;
       
-      actions = [
+      steps = [
         {
           name = "slow-action";
           bash = ''
@@ -71,7 +71,7 @@ nixactions.mkWorkflow {
       # Job-level timeout overrides workflow timeout
       timeout = "5s";
       
-      actions = [
+      steps = [
         {
           name = "quick-task";
           bash = ''
@@ -92,7 +92,7 @@ nixactions.mkWorkflow {
       # Override workflow timeout with null (no timeout)
       timeout = null;
       
-      actions = [
+      steps = [
         {
           name = "no-timeout-action";
           bash = ''
@@ -109,7 +109,7 @@ nixactions.mkWorkflow {
       needs = ["test-no-timeout"];
       inherit executor;
       
-      actions = [
+      steps = [
         {
           name = "test-seconds";
           bash = ''

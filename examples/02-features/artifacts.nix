@@ -20,7 +20,7 @@ nixactions.mkWorkflow {
     build = {
       inherit executor;
       
-      actions = [
+      steps = [
         {
           name = "build";
           bash = ''
@@ -64,7 +64,7 @@ nixactions.mkWorkflow {
       # Simple strings - restore to root (default)
       inputs = ["frontend" "backend"];
       
-      actions = [
+      steps = [
         {
           name = "test-default";
           bash = ''
@@ -102,7 +102,7 @@ nixactions.mkWorkflow {
         { name = "backend"; path = "server/"; }
       ];
       
-      actions = [
+      steps = [
         {
           name = "test-custom";
           bash = ''
@@ -140,7 +140,7 @@ nixactions.mkWorkflow {
         { name = "release"; path = "bin/"; }  # Custom: to bin/
       ];
       
-      actions = [
+      steps = [
         {
           name = "test-mixed";
           bash = ''
@@ -181,7 +181,7 @@ nixactions.mkWorkflow {
         "release"
       ];
       
-      actions = [
+      steps = [
         {
           name = "validate";
           bash = ''

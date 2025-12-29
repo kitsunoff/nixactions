@@ -14,7 +14,7 @@ nixactions.mkWorkflow {
         build-artifacts = "build/dist/";
       };
       
-      actions = [
+      steps = [
         {
           name = "build";
           bash = ''
@@ -45,7 +45,7 @@ nixactions.mkWorkflow {
       
       inputs = ["release-binary" "build-artifacts"];
       
-      actions = [
+      steps = [
         {
           name = "test";
           bash = ''

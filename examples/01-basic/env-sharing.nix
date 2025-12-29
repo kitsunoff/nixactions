@@ -11,7 +11,7 @@ nixactions.mkWorkflow {
     build = {
       inherit executor;
       
-      actions = [
+      steps = [
         {
           name = "generate-version";
           bash = ''
@@ -98,7 +98,7 @@ EOF
       
       inputs = [ "build-info" ];
       
-      actions = [
+      steps = [
         {
           name = "parse-build-info";
           bash = ''
@@ -147,7 +147,7 @@ EOF
       
       inputs = [ "build-info" ];
       
-      actions = [
+      steps = [
         {
           name = "multi-step-calculation";
           bash = ''
@@ -211,7 +211,7 @@ EOF
       needs = [ "test-advanced" "calculate" ];
       inherit executor;
       
-      actions = [{
+      steps = [{
         name = "summary";
         bash = ''
           echo ""

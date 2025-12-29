@@ -82,7 +82,7 @@ nixactions.mkWorkflow {
 Job :: {
   # Required
   executor :: Executor,
-  actions  :: [Action],
+  steps    :: [Step],
   
   # Dependencies
   needs :: [String] = [],
@@ -132,7 +132,7 @@ Job :: {
     
     timeout = 300;
     
-    actions = [
+    steps = [
       { bash = "npm test"; }
     ];
   };
@@ -453,7 +453,7 @@ mkMatrixJobs :: {
   name     :: String,
   matrix   :: AttrSet [Any],
   executor :: Executor | (MatrixEntry -> Executor),
-  actions  :: [Action] | (MatrixEntry -> [Action]),
+  steps    :: [Step] | (MatrixEntry -> [Action]),
   # ... other Job fields
 } -> AttrSet Job
 ```

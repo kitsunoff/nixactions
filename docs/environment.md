@@ -148,7 +148,7 @@ jobs = {
       })
     ];
     
-    actions = [...];
+    steps = [...];
   };
 };
 ```
@@ -333,7 +333,7 @@ nixactions.mkWorkflow {
         ])
       ];
       
-      actions = [
+      steps = [
         {
           name = "validate-env";
           bash = ''

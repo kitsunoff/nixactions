@@ -40,7 +40,7 @@ nixactions.mkWorkflow {
     lint = {
       inherit executor;
       
-      actions = [
+      steps = [
         {
           name = "install-deps";
           bash = ''
@@ -64,7 +64,7 @@ nixactions.mkWorkflow {
     typecheck = {
       inherit executor;
       
-      actions = [
+      steps = [
         {
           name = "install-deps";
           bash = ''
@@ -98,7 +98,7 @@ nixactions.mkWorkflow {
         coverage = "coverage/";
       };
       
-      actions = [
+      steps = [
         {
           name = "install-deps";
           bash = ''
@@ -145,7 +145,7 @@ nixactions.mkWorkflow {
         dist = "dist/";
       };
       
-      actions = [
+      steps = [
         {
           name = "install-deps";
           bash = ''
@@ -189,7 +189,7 @@ nixactions.mkWorkflow {
         { name = "dist"; path = "dist/"; }
       ];
       
-      actions = [
+      steps = [
         {
           name = "deploy-staging";
           bash = ''
@@ -223,7 +223,7 @@ nixactions.mkWorkflow {
         { name = "dist"; path = "dist/"; }
       ];
       
-      actions = [
+      steps = [
         {
           name = "deploy-production";
           bash = ''
@@ -254,7 +254,7 @@ nixactions.mkWorkflow {
       condition = "success()";
       inherit executor;
       
-      actions = [
+      steps = [
         {
           name = "notify";
           condition = "always()";
@@ -285,7 +285,7 @@ nixactions.mkWorkflow {
       condition = "failure()";
       inherit executor;
       
-      actions = [
+      steps = [
         {
           name = "notify";
           condition = "always()";

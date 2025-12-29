@@ -9,7 +9,7 @@ nixactions.mkWorkflow {
     
     lint-shell = {
       inherit executor;
-      actions = [{
+      steps = [{
         name = "lint-shell-scripts";
         bash = ''
           echo "→ Linting shell scripts..."
@@ -26,7 +26,7 @@ nixactions.mkWorkflow {
     
     check-nix = {
       inherit executor;
-      actions = [{
+      steps = [{
         name = "check-nix-formatting";
         bash = ''
           echo "→ Checking Nix formatting..."
@@ -43,7 +43,7 @@ nixactions.mkWorkflow {
     
     analyze = {
       inherit executor;
-      actions = [{
+      steps = [{
         name = "analyze-structure";
         bash = ''
           echo "→ Analyzing project structure..."
@@ -62,7 +62,7 @@ nixactions.mkWorkflow {
       needs = [ "lint-shell" "check-nix" "analyze" ];
       inherit executor;
       
-      actions = [{
+      steps = [{
         name = "final-report";
         bash = ''
           echo "╔═══════════════════════════════════════╗"

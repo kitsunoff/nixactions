@@ -20,11 +20,10 @@ rec {
       runtimeLibs = import ../runtime-libs { inherit lib pkgs; };
       retryLib = runtimeLibs.retry;
       timeoutLib = runtimeLibs.timeout;
-      actionName = action.passthru.name or (builtins.baseNameOf action);
-      actionCondition = 
-        if action.passthru.condition != null 
-        then action.passthru.condition 
-        else "success()";
+      # For display: prefer passthru.name, then derivation name, then baseNameOf outPath
+      actionName = action.passthru.name or action.name or (builtins.baseNameOf action);
+      rawCondition = action.passthru.condition or null;
+      actionCondition = if rawCondition != null then rawCondition else "success()";
       actionRetry = action.passthru.retry or null;
       actionTimeout = action.passthru.timeout or null;
       retryEnv = retryLib.retryToEnv actionRetry;

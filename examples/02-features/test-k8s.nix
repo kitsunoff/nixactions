@@ -31,7 +31,7 @@ nixactions.mkWorkflow {
   jobs = {
     hello = {
       inherit executor;
-      actions = [
+      steps = [
         {
           name = "greet";
           bash = "echo 'Hello from Kubernetes!'";
@@ -54,7 +54,7 @@ nixactions.mkWorkflow {
     build = {
       inherit executor;
       needs = [ "hello" ];
-      actions = [
+      steps = [
         {
           name = "create-artifact";
           bash = ''
@@ -73,7 +73,7 @@ nixactions.mkWorkflow {
       inherit executor;
       needs = [ "build" ];
       inputs = [ "build-result" ];
-      actions = [
+      steps = [
         {
           name = "check-artifact";
           bash = ''

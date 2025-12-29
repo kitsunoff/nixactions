@@ -63,7 +63,7 @@ nixactions.mkWorkflow {
     # Runs immediately (Level 0)
     lint = {
       executor = nixactions.executors.local;
-      actions = [
+      steps = [
         { bash = "npm run lint"; }
       ];
     };
@@ -72,7 +72,7 @@ nixactions.mkWorkflow {
     test = {
       needs = [ "lint" ];
       executor = nixactions.executors.local;
-      actions = [
+      steps = [
         { bash = "npm test"; }
       ];
     };
@@ -80,7 +80,7 @@ nixactions.mkWorkflow {
     # Runs after test succeeds (Level 2)
     build = {
       needs = [ "test" ];
-      actions = [
+      steps = [
         { bash = "npm run build"; }
       ];
     };
@@ -309,7 +309,7 @@ The `nixShell` action allows you to dynamically add any Nix package to your job 
   jobs = {
     api-test = {
       executor = nixactions.executors.local;
-      actions = [
+      steps = [
         # Add packages on-the-fly
         (nixactions.actions.nixShell [ "curl" "jq" ])
         
@@ -325,7 +325,7 @@ The `nixShell` action allows you to dynamically add any Nix package to your job 
     # Different tools in different jobs
     file-processing = {
       executor = nixactions.executors.local;
-      actions = [
+      steps = [
         (nixactions.actions.nixShell [ "ripgrep" "fd" "bat" ])
         {
           bash = "fd -e nix -x rg -l 'TODO'";
@@ -348,7 +348,7 @@ See `examples/nix-shell.nix` for more examples.
 
 ```nix
 {
-  actions = [
+  steps = [
     # Load from SOPS
     (nixactions.actions.sopsLoad {
       file = ./secrets.sops.yaml;
@@ -396,7 +396,7 @@ nixactions.mkWorkflow {
         ENVIRONMENT = "production";
       };
       
-      actions = [
+      steps = [
         {
           # Action level (highest priority)
           env = {
@@ -493,7 +493,7 @@ jobs = {
 #### Action-level Conditions
 
 ```nix
-actions = [
+steps = [
   { bash = "npm test"; }
   
   # Only deploy on main branch

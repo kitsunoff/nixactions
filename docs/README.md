@@ -53,7 +53,7 @@ Nix Code                    Compiled Workflow           Execution
 nixactions.mkWorkflow {       #!/usr/bin/env bash         $ nix run .#ci
   jobs = {                  
     test = {                setup_workspace()           -> Setting up workspace
-      actions = [           job_test()                  -> Running job: test
+      steps = [           job_test()                  -> Running job: test
         { bash = "..." }      /nix/store/xxx/bin/test   -> Action: test
       ];                    job_build()                 -> Running job: build
     };                        /nix/store/yyy/bin/build  -> Action: build
@@ -86,7 +86,7 @@ nixactions.mkWorkflow {
   jobs = {
     test = {
       executor = nixactions.executors.local;
-      actions = [
+      steps = [
         { bash = "npm test"; }
       ];
     };
@@ -94,7 +94,7 @@ nixactions.mkWorkflow {
     build = {
       needs = [ "test" ];
       executor = nixactions.executors.local;
-      actions = [
+      steps = [
         { bash = "npm run build"; }
       ];
     };

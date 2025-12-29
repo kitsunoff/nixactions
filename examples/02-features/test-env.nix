@@ -10,7 +10,7 @@ nixactions.mkWorkflow {
     test-regular-vars = {
       inherit executor;
       
-      actions = [
+      steps = [
         {
           name = "set-regular-var";
           bash = ''
@@ -41,7 +41,7 @@ nixactions.mkWorkflow {
       needs = [ "test-regular-vars" ];
       inherit executor;
       
-      actions = [
+      steps = [
         {
           name = "set-local-var";
           bash = ''
@@ -73,7 +73,7 @@ nixactions.mkWorkflow {
       needs = [ "test-local-vars" ];
       inherit executor;
       
-      actions = [
+      steps = [
         {
           name = "without-export";
           bash = ''
@@ -101,7 +101,7 @@ nixactions.mkWorkflow {
       needs = [ "test-export-vars" ];
       inherit executor;
       
-      actions = [{
+      steps = [{
         name = "summary";
         bash = ''
           echo ""

@@ -66,11 +66,14 @@ makeConfigurable {
       ACTION_FAILED=false
       ${lib.concatMapStringsSep "\n" (action: 
         let
-          actionName = action.passthru.name or (builtins.baseNameOf action);
+          # For display name: prefer passthru.name, fall back to derivation name
+          actionName = action.passthru.name or action.name or (builtins.baseNameOf action);
+          # For binary path: use derivation name (without hash prefix from outPath)
+          binaryName = action.name or (builtins.baseNameOf action);
         in
           actionRunner.generateActionExecution {
             inherit action jobName;
-            actionBinary = "${action}/bin/${lib.escapeShellArg actionName}";
+            actionBinary = "${action}/bin/${lib.escapeShellArg binaryName}";
           }
       ) actionDerivations}
       

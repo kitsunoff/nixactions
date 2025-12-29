@@ -21,7 +21,7 @@ nixactions.mkWorkflow {
     lint = {
       inherit executor;
       
-      actions = [
+      steps = [
         {
           name = "checkout-code";
           deps = [pkgs.python311];
@@ -97,7 +97,7 @@ EOF
     type-check = {
       inherit executor;
       
-      actions = [
+      steps = [
         {
           name = "setup-code-for-typecheck";
           deps = [pkgs.python311];
@@ -145,7 +145,7 @@ EOF
       needs = [ "lint" "type-check" ];
       inherit executor;
       
-      actions = [
+      steps = [
         {
           name = "checkout-code";
           bash = ''
@@ -228,7 +228,7 @@ EOF
       needs = [ "test" ];
       inherit executor;
       
-      actions = [
+      steps = [
         {
           name = "checkout-code";
           deps = [pkgs.python311];
@@ -335,7 +335,7 @@ EOF
       "if" = "success()";
       inherit executor;
       
-      actions = [{
+      steps = [{
         name = "push-to-registry";
         deps = [pkgs.python311];
 
@@ -361,7 +361,7 @@ EOF
       "if" = "success()";
       inherit executor;
       
-      actions = [{
+      steps = [{
 
         name = "send-success-notification";
         bash = ''
@@ -383,7 +383,7 @@ EOF
       condition = "failure()";
       inherit executor;
       
-      actions = [{
+      steps = [{
         name = "send-failure-notification";
         bash = ''
           echo "→ Sending failure notification"
@@ -403,7 +403,7 @@ EOF
       condition = "always()";
       inherit executor;
       
-      actions = [{
+      steps = [{
         name = "cleanup-temp-files";
         bash = ''
           echo "→ Cleaning up temporary files"

@@ -67,7 +67,7 @@ nixactions.mkWorkflow {
     test-env-in-pod = {
       inherit executor;
       
-      actions = [
+      steps = [
         {
           name = "show-environment";
           bash = ''
@@ -180,7 +180,7 @@ nixactions.mkWorkflow {
         JOB_SPECIFIC = "only_in_this_job";
       };
       
-      actions = [
+      steps = [
         {
           name = "validate-job-env";
           bash = ''
@@ -218,7 +218,7 @@ nixactions.mkWorkflow {
       inherit executor;
       needs = [ "test-job-env" ];
       
-      actions = [
+      steps = [
         {
           name = "final-summary";
           bash = ''

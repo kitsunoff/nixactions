@@ -57,7 +57,7 @@ nixactions.mkWorkflow {
   jobs = {
     test = {
       executor = nixactions.executors.local;
-      actions = [
+      steps = [
         { bash = "npm test"; deps = [ pkgs.nodejs ]; }
       ];
     };
@@ -66,7 +66,7 @@ nixactions.mkWorkflow {
       needs = [ "test" ];
       condition = ''[ "$GITHUB_REF" = "refs/heads/main" ]'';
       executor = nixactions.executors.local;
-      actions = [
+      steps = [
         { bash = "deploy.sh"; }
       ];
     };
@@ -116,14 +116,14 @@ nixactions.mkWorkflow {
   jobs = {
     test = {
       executor = nixactions.executors.local;
-      actions = [{ bash = "npm test"; }];
+      steps = [{ bash = "npm test"; }];
     };
     
     deploy = {
       needs = [ "test" ];
       condition = ''[ "$BRANCH" = "main" ]'';
       executor = nixactions.executors.local;
-      actions = [{ bash = "deploy.sh"; }];
+      steps = [{ bash = "deploy.sh"; }];
     };
   };
 }
@@ -186,8 +186,8 @@ let
   };
 in {
   jobs = {
-    test-unit = { actions = [ (commonTest // { bash = "npm run test:unit"; }) ]; };
-    test-e2e = { actions = [ (commonTest // { bash = "npm run test:e2e"; }) ]; };
+    test-unit = { steps = [ (commonTest // { bash = "npm run test:unit"; }) ]; };
+    test-e2e = { steps = [ (commonTest // { bash = "npm run test:e2e"; }) ]; };
   };
 }
 ```

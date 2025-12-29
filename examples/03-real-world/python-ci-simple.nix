@@ -37,7 +37,7 @@ in nixactions.mkWorkflow {
     lint = {
       inherit executor;
       
-      actions = [
+      steps = [
         # Each job must checkout code (isolated workspace)
         { bash = createPythonCode; }
         
@@ -57,7 +57,7 @@ in nixactions.mkWorkflow {
       needs = [ "lint" ];
       inherit executor;
       
-      actions = [
+      steps = [
         # Checkout code again (new job = new directory)
         { bash = createPythonCode; }
         
@@ -78,7 +78,7 @@ in nixactions.mkWorkflow {
       needs = [ "test" ];
       inherit executor;
       
-      actions = [
+      steps = [
         # Checkout code again
         { bash = createPythonCode; }
         

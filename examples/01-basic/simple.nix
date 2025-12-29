@@ -9,7 +9,7 @@ nixactions.mkWorkflow {
     hello = {
       inherit executor;
       
-      actions = [
+      steps = [
         nixactions.actions.checkout
         
         {

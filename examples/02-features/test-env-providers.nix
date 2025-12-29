@@ -56,7 +56,7 @@ nixactions.mkWorkflow {
     test-priority = {
       inherit executor;
       
-      actions = [
+      steps = [
         {
           name = "show-environment";
           bash = ''
@@ -96,7 +96,7 @@ nixactions.mkWorkflow {
       needs = ["test-priority"];
       inherit executor;
       
-      actions = [
+      steps = [
         {
           name = "test-required-validation";
           bash = ''
@@ -124,7 +124,7 @@ nixactions.mkWorkflow {
         SHARED_VAR = "job_override";  # This SHOULD override provider value
       };
       
-      actions = [
+      steps = [
         {
           name = "test-job-env";
           bash = ''

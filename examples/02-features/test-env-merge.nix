@@ -38,7 +38,7 @@ nixactions.mkWorkflow {
         LEVEL = "job";              # Overrides workflow
       };
       
-      actions = [
+      steps = [
         # Action 1: No action-level env (inherits from job)
         {
           name = "test-inheritance";
@@ -131,7 +131,7 @@ nixactions.mkWorkflow {
       needs = ["test-merge"];
       inherit executor;
       
-      actions = [
+      steps = [
         {
           name = "verify-shared";
           bash = ''
@@ -162,7 +162,7 @@ nixactions.mkWorkflow {
       inherit executor;
       condition = "always()";
       
-      actions = [
+      steps = [
         {
           name = "summary";
           bash = ''

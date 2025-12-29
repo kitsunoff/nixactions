@@ -24,7 +24,7 @@ nixactions.mkWorkflow {
         max_time = 60;
       };
       
-      actions = [
+      steps = [
         {
           name = "fail-twice-then-succeed";
           bash = ''
@@ -59,7 +59,7 @@ nixactions.mkWorkflow {
       inherit executor;
       needs = ["test-exponential"];
       
-      actions = [
+      steps = [
         {
           name = "fail-once-with-linear-backoff";
           bash = ''
@@ -98,7 +98,7 @@ nixactions.mkWorkflow {
       inherit executor;
       needs = ["test-linear"];
       
-      actions = [
+      steps = [
         {
           name = "constant-backoff";
           bash = ''
@@ -140,7 +140,7 @@ nixactions.mkWorkflow {
       # Disable retry for this job
       retry = null;
       
-      actions = [
+      steps = [
         {
           name = "no-retry-success";
           bash = ''
@@ -155,7 +155,7 @@ nixactions.mkWorkflow {
       inherit executor;
       needs = ["test-no-retry"];
       
-      actions = [
+      steps = [
         {
           name = "single-attempt";
           bash = ''

@@ -62,7 +62,7 @@ jobs = {
       binary = "myapp";
     };
     
-    actions = [{
+    steps = [{
       bash = ''
         npm run build
         # dist/ created in job directory
@@ -77,7 +77,7 @@ jobs = {
     # Declare inputs (what to restore)
     inputs = [ "dist" "binary" ];
     
-    actions = [{
+    steps = [{
       bash = ''
         # Artifacts restored before actions run
         ls dist/
@@ -119,7 +119,7 @@ jobs = {
       backend = "dist/backend/";
       shared = "dist/shared/";
     };
-    actions = [{ bash = "npm run build:all"; }];
+    steps = [{ bash = "npm run build:all"; }];
   };
   
   deploy = {
@@ -129,7 +129,7 @@ jobs = {
       { name = "backend"; path = "server/"; }
       { name = "shared"; path = "lib/"; }
     ];
-    actions = [{
+    steps = [{
       bash = ''
         ls public/   # Frontend files
         ls server/   # Backend files
@@ -146,12 +146,12 @@ jobs = {
 jobs = {
   build-api = {
     outputs = { api = "services/api/dist/"; };
-    actions = [{ bash = "cd services/api && npm run build"; }];
+    steps = [{ bash = "cd services/api && npm run build"; }];
   };
   
   build-worker = {
     outputs = { worker = "services/worker/dist/"; };
-    actions = [{ bash = "cd services/worker && npm run build"; }];
+    steps = [{ bash = "cd services/worker && npm run build"; }];
   };
   
   deploy = {
@@ -160,7 +160,7 @@ jobs = {
       { name = "api"; path = "services/api/dist/"; }
       { name = "worker"; path = "services/worker/dist/"; }
     ];
-    actions = [{
+    steps = [{
       bash = "deploy-monorepo.sh";
     }];
   };
@@ -175,7 +175,7 @@ jobs = {
     outputs = {
       coverage = "coverage/";
     };
-    actions = [{
+    steps = [{
       bash = "npm test -- --coverage";
     }];
   };
@@ -183,7 +183,7 @@ jobs = {
   upload-coverage = {
     needs = ["test"];
     inputs = ["coverage"];
-    actions = [{
+    steps = [{
       bash = "codecov upload coverage/lcov.info";
     }];
   };

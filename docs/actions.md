@@ -162,7 +162,7 @@ let
     echo "Custom action"
   '';
 in {
-  actions = [ customAction ];
+  steps = [ customAction ];
 }
 ```
 
@@ -196,7 +196,7 @@ nixactions.actions.nixShell [ "curl" "jq" "git" ]
 
 # Usage in job
 {
-  actions = [
+  steps = [
     (nixactions.actions.nixShell [ "curl" "jq" ])
     {
       bash = ''
@@ -282,8 +282,8 @@ let
   };
 in {
   jobs = {
-    test-node-18.actions = [ commonTest ];
-    test-node-20.actions = [ commonTest ];
+    test-node-18.steps = [ commonTest ];
+    test-node-20.steps = [ commonTest ];
     # Same derivation, reused!
   };
 }
@@ -321,14 +321,14 @@ in {
 
 ```nix
 # Good: focused actions
-actions = [
+steps = [
   { name = "lint"; bash = "npm run lint"; }
   { name = "test"; bash = "npm test"; }
   { name = "build"; bash = "npm run build"; }
 ];
 
 # Avoid: monolithic actions
-actions = [
+steps = [
   { name = "ci"; bash = "npm run lint && npm test && npm run build"; }
 ];
 ```
@@ -357,12 +357,12 @@ actions = [
 # Job-level: affects all actions
 jobs.deploy = {
   condition = ''[ "$BRANCH" = "main" ]'';
-  actions = [ ... ];
+  steps = [ ... ];
 };
 
 # Action-level: affects single action
 jobs.ci = {
-  actions = [
+  steps = [
     { bash = "npm test"; }
     {
       name = "deploy";

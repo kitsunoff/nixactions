@@ -18,7 +18,7 @@ nixactions.mkWorkflow {
         JOB1_VAR = "only-in-job1";
       };
       
-      actions = [
+      steps = [
         {
           name = "show-job1-env";
           bash = ''
@@ -53,7 +53,7 @@ nixactions.mkWorkflow {
         JOB2_VAR = "only-in-job2";
       };
       
-      actions = [{
+      steps = [{
         name = "show-job2-env";
         bash = ''
           echo "╔═══════════════════════════════════════╗"

@@ -13,7 +13,7 @@ nixactions.mkWorkflow {
     test = {
       inherit executor;
       
-      actions = [
+      steps = [
         {
           name = "checkout";
           bash = ''
