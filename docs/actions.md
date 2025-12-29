@@ -152,17 +152,26 @@ npm test
 }
 ```
 
-### Direct Derivation
+### Running Non-Bash Scripts
+
+Use `lib.getExe` to run Python, JavaScript, or other scripts:
 
 ```nix
-# You can also pass a derivation directly
-let
-  customAction = pkgs.writeScriptBin "custom" ''
-    #!/usr/bin/env bash
-    echo "Custom action"
+# Python script
+{
+  name = "python-analysis";
+  bash = ''
+    ${lib.getExe (pkgs.writers.writePython3 "analyze" {} ''
+      import json
+      print(json.dumps({"status": "ok"}))
+    '')}
   '';
-in {
-  steps = [ customAction ];
+}
+
+# Any executable
+{
+  name = "search";
+  bash = "${lib.getExe pkgs.ripgrep} -r 'TODO' src/";
 }
 ```
 

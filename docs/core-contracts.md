@@ -4,65 +4,47 @@ NixActions is built on four core contracts: Step, Executor, Job, and Workflow.
 
 ---
 
-## Contract 1: Step = Derivation
+## Contract 1: Step = Bash AttrSet
 
-**Definition:** A Step is a Nix derivation (bash script + dependencies in /nix/store).
+**Definition:** A Step is an attribute set with a `bash` script that gets compiled to a Nix derivation.
 
 > **Note:** "Step" is the execution primitive. "Action" refers to reusable components from `lib/actions/` or SDK-defined actions.
 
 ### Type Signature
 
 ```nix
-Step :: Derivation {
-  type = "derivation";
-  outputPath = "/nix/store/xxx-action-name";
-  
-  # Metadata (via passthru)
-  passthru = {
-    name     :: String;
-    deps     :: [Derivation];
-    env      :: AttrSet String;
-    workdir  :: Path | Null;
-    condition :: Condition | Null;
-  };
-}
-```
-
-### Constructor
-
-```nix
-mkStep :: {
+Step :: {
   name      :: String,
-  bash      :: String,
+  bash      :: String,           # Required: bash script to execute
   deps      :: [Derivation] = [],
   env       :: AttrSet String = {},
   workdir   :: Path | Null = null,
   condition :: Condition | Null = null,
   retry     :: RetryConfig | Null = null,
   timeout   :: Int | Null = null,
-} -> Derivation
+}
 ```
 
 ### Key Design Points
 
-- Step is ALWAYS a derivation in `/nix/store`
-- User can pass attrset (converted to derivation via `mkStep`)
-- User can pass derivation directly (already a step)
+- Step is defined as an attrset with `bash` field (required)
+- Compiled to derivation at build time via `writeShellApplication`
+- Use `deps` to add packages available in PATH during execution
+- For non-bash scripts (Python, JS, etc.), wrap with `lib.getExe`
 - Build-time validation (if step doesn't build -> workflow doesn't build)
 - Caching (steps built once, reused across jobs)
 
 ### Examples
 
 ```nix
-# User writes attrset (converted to derivation):
+# Simple step:
 {
   name = "test";
   bash = "npm test";
   deps = [ pkgs.nodejs ];
-  condition = "always()";
 }
 
-# With bash condition:
+# With condition:
 {
   name = "deploy";
   bash = "kubectl apply -f k8s/";
@@ -70,18 +52,20 @@ mkStep :: {
   condition = ''[ "$BRANCH" = "main" ]'';
 }
 
-# Compiled to derivation:
-# /nix/store/xxx-test
-#   bin/
-#     test  # Executable script with condition check
-
-# Direct derivation usage:
-let
-  testStep = pkgs.writeScriptBin "test" ''
-    npm test
+# Running Python script:
+{
+  name = "analyze";
+  bash = ''
+    ${lib.getExe (pkgs.writers.writePython3 "analyze" {} ''
+      print("Analyzing...")
+    '')}
   '';
-in {
-  steps = [ testStep ];
+}
+
+# Running any executable:
+{
+  name = "custom-tool";
+  bash = "${lib.getExe pkgs.ripgrep} -r 'TODO' .";
 }
 ```
 

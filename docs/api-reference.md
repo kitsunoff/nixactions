@@ -141,13 +141,13 @@ Job :: {
 
 ---
 
-## Action Config
+## Step Config
 
 ```nix
-Action :: {
-  name      :: String = "action",
-  bash      :: String,
-  deps      :: [Derivation] = [],
+Step :: {
+  name      :: String = "step",
+  bash      :: String,              # Required: bash script to execute
+  deps      :: [Derivation] = [],   # Packages available in PATH
   env       :: AttrSet String = {},
   workdir   :: Path | Null = null,
   condition :: Condition | Null = null,
@@ -171,6 +171,16 @@ Action :: {
     max_attempts = 3;
   };
   timeout = 120;
+}
+
+# Running non-bash scripts with lib.getExe:
+{
+  name = "python-check";
+  bash = ''
+    ${lib.getExe (pkgs.writers.writePython3 "check" {} ''
+      print("Running Python checks...")
+    '')}
+  '';
 }
 ```
 
